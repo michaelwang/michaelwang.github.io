@@ -1,0 +1,39 @@
+* 概述
+基于上一篇文章[[http://wangzhenhua.rocks/dotnet-call-java-http-timezone-mistake.html][对时区理解的偏差导致的一个生产环境的故障]] 碰到的问题，在跨语言调用或者应用之间调用的时，需要制定一个统一的日期时间类型的格式标准，
+而且这个标准需要兼顾不同的数据存储中间件的差异，以此避免日期时间转化、存储方面的问题。
+
+* 可以选择的标准
+1. 我们可以选择如下4个标准
+ + 1.1 年-月-日 时：分：秒 （默认当前东八区）
+ + 1.2 年-月-日 时：分：秒 +08:00 （以+8: 00计算后的数值为准）
+ + 1.3 年-月-日 时：分：秒 +08:00  （以+8:00 之前的部分为准）
+ + 1.4 Unix Time
+
+* 需要考虑的中间件的存储的标准差异
+** MySQL
+MySQL 的日期时间数据类型有两个，分别是timestamp和datetime，如果我们使用了timestamp这样的数据类型，MySQL 会基于当前MySQL Server时区把程序传入的时间转换成 UTC 的时间进行存储，当程序再读取的时后，MySQL 会根据当前MySQL Server的时区设置计算出当前时区的时间，返回给程序。 而使用datetime类型则是存储什么数据就返回什么数据。
+参考资料： [[https://dev.mysql.com/doc/refman/5.7/en/datetime.html][11.3.1 The DATE, DATETIME, and TIMESTAMP Types]]
+** MongoDB
+应用程序可以以如下格式的参数传入日期时间数据时，MongoDB内部都以64位整型存储Unix time，应用程序读取时，需要根据当前时区进行转换
+参考资料: [[https://docs.mongodb.com/manual/reference/method/Date/][Date]]
+#+BEGIN_SRC
+    new Date("<YYYY-mm-dd>") returns the ISODate with the specified date.
+    new Date("<YYYY-mm-ddTHH:MM:ss>") specifies the datetime in the client’s local timezone and returns the ISODate with the specified datetime in UTC.
+    new Date("<YYYY-mm-ddTHH:MM:ssZ>") specifies the datetime in UTC and returns the ISODate with the specified datetime in UTC.
+    new Date(<integer>) specifies the datetime as milliseconds since the Unix epoch (Jan 1, 1970), and returns the resulting ISODate instance.
+#+END_SRC
+** ES
+ES 应用程序以unix time格式存储日期，读取的时后，根据当前时区进行一次转换
+** Reids
+不存在日期时间类型，不参与讨论。
+
+* 分析和方案制定
+  +  如果我们采用标准1.4， 在语言层面、存储层面都可以保持一致，唯一不好的地方就是对于人的可读性不高，需要应用做一次转换，提高其可读性
+  +  因为上一文章 [[http://wangzhenhua.rocks/dotnet-call-java-http-timezone-mistake.html][对时区理解的偏差导致的一个生产环境的故障]] 有对CST的定义解释，标准1.2是对时区错误的理解，所以不参与标准的制定讨论范围
+  +  如果采用标准1.3 ，我们在MySQL层面以datatime类型存储和timestamp类型存储，应用程序理论上不需要做任何调整，
+        在MongoDB层面，应用程序在存储时不需要做额外的处理逻辑，但是在读取时，需要根据当前时区进行一次转换，
+        在ES层面，我们需要在存储和读取的时后，都要进行转换，所以相对于标准1.2，在存储层面的成本比较高，但是优势的地方
+        在跨语言的通信或者跨应用之间的通信的时后，大家遵循标准相对于unix time，它的可读性比较高
+  +  因为标准1.1和标准1.2的处理情况比较类似，它还需要额外处理程序自动生成的日期时间后面的时区信息，处理成本比2.2 要更高一些
+  +  基于上述的分析，我们可以在1.4和1.2 之间进行选择。
+  +  我个人倾向选者1.4

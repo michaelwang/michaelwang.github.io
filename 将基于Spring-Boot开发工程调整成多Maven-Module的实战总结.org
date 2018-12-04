@@ -1,0 +1,126 @@
+* 概述
+
+在基于Spring Boot开发的项目中，为了便于后期的维护，
+需要将项目按照模块进行划分，先将项目按照业务逻辑架进行划分，
+然后根据划分的业务模块再基于Maven的Module机制进行组织工程。
+
+下面主要记录我将原单Module的Spring Boot工程，调整成多Module的形式的过程，
+以及碰到的问题和解决过程。
+
+
+* 调整过程
+将项目按照如下三个大的module进行划分： api/core/web，
+其中api定义所有的模块的标准接口模块，core是基于api中标准接口的一些具体实现，
+web是提供http服务模块。基于这个边界的定义，自然我们就有如下的上下关系：
+#+BEGIN_SRC
+    web
+     ^
+     |
+     |
+    core
+     ^
+     |
+     |
+    api
+#+END_SRC
+
+api模块举例说明，比如我们在api模块中，有一个模块为api-authentication模块，
+该模块主要定义了和用户认证逻辑的所有业务接口，比如：
+#+BEGIN_SRC java
+public interface AuthenticationPolicy {
+
+  boolean isSatisfied(AuthenticationBuilder builder) throws AccountSecurityException;
+
+  boolean isSupport(int userType);
+
+}
+#+END_SRC
+
+那么在core模块中,有一个模块为: core-authentication模块，其中有这个接口的一个实现类：
+#+BEGIN_SRC java
+public class InternalUserPolicy implements AuthenticationPolicy {
+
+  private UserService userService;
+
+  public InternalUserPolicy(UserService userService) {
+    this.userService = userService;
+  }
+
+  @Override
+  public boolean isSatisfied(AuthenticationBuilder builder) throws AccountSecurityException {
+       ......
+       ......
+   }
+
+  @Override
+  public boolean isSupport(int userType) {
+    return userType == UserType.ACCOUNT_USER_INTERNAL_USER.getValue();
+  }
+}
+#+END_SRC
+
+在web工程中，我们有LonginController，需要引用Polocy的实现类，那么我们就需要将该对象
+加入到Spring IOC中去，如何加入? 根据Spring Boot的规范，我们在core-authentication模块的
+src/main/resources目录下追加文件：META-INF/spring.factories，添加如下内容：
+#+BEGIN_SRC
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=your.package.AuthenticationConfiguration
+#+END_SRC
+在AuthenticationConfiguration中有如下的对象定义：
+#+BEGIN_SRC java
+  public InternalUserPolicy getInternalUserPolicy() {
+    return new InternalUserPolicy(userService);
+  }
+#+END_SRC
+
+通过如上的方式，我们就可以让凡是引用core-authentication模块的spring-boot工程自动装配Policy对象到IOC中，
+
+于是我们在web工程的子模块中以的maven坐标方式引用即可。
+
+我基于模块的划分，在web模块下，设计出的如下的子模块：
+#+BEGIN_SRC
+web-api-user-login
+web-api-user-dashboard
+web-api-privilege-checking
+web-watchdog
+web-configuration
+......
+#+END_SRC
+
+其中所有含有api相关的模块，都含有controller接口，提供http接口给外部调用。
+那我们如何基于多Maven Module的形式来组织Spring-Boot工程？
+Spring Boot工程需要有一个默认的启动类，以及对应的配置类，默认是通过扫描启动类包路经
+下的class文件来启动工程。
+
+在web工程下面有web-configuration模块，这个模块的意图是装配所有在web模块下的子模块的配置对象到IOC中，
+那么就需能够要让Spring Boot工程加载web-configuration模块，
+因此就需要在web-configuration模块中，将自身内部的configuration对象都通过spring boot的机制装配到spring ioc容器中。
+
+为了能够让web工程启动，于是决定再新建两个模块:
+#+BEGIN_SRC
+web-init
+web-app
+#+END_SRC
+
+在web-init模块添加工程的启动类：UserCenterApplication.java，
+在web-app模块引入了web-configuration模块和web-init模块，
+Spring Boot会自动将web-configuration中的配置对象装配到ioc容器中。
+
+然后在web-app模块中引用web模块中任意的其他子模块，比如：web-api-authentication模块，
+就可以将该字模块加载到web工程中，对外提供服务。
+
+最后还需要在web-app工程的pom.xml文件中指定mainClass:
+#+BEGIN_SRC xml
+<build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <mainClass>your.package.web.UserCenterWebApplication</mainClass>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+#+END_SRC
+
+通过如上的步骤就可以实现通过多maven module的形式来组织Spring Boot工程接口。

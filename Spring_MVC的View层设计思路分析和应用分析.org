@@ -1,0 +1,117 @@
+接着上一篇的文章: [[http://wangzhenhua.rocks/spring-boot-freemarker-not-load-reseaon.html][Spring-Boot关于freemarker的不能正常加载过程分析]] 发现spring对于view层的设计值得学习一下，
+因此这里记录下探索学习的一些心得体会。
+
+在view被渲染的逻辑触发之前，DistpacheServlet的调用链如下：
+doService -> doDispatch -> processDisptachResult -> render
+到了render就到了我们需要分析的地方了，
+
+在DispatchServlet类中的doService方法会接受请求，
+找到对应的controller进行处理结束后，
+再寻找ViewResovler对象来渲染结果页面到客户端，
+其中在IOC中找出的所有ViewResolver类型的对象都是
+通过initViewResolvers方法方法注入到DispatchServlet中的，
+initViewResolvers方法,如下：
+
+#+BEGIN_SRC java
+/**
+         * Initialize the ViewResolvers used by this class.
+         * <p>If no ViewResolver beans are defined in the BeanFactory for this
+         * namespace, we default to InternalResourceViewResolver.
+         */
+        private void initViewResolvers(ApplicationContext context) {
+                this.viewResolvers = null;
+
+                if (this.detectAllViewResolvers) {
+                        // Find all ViewResolvers in the ApplicationContext, including ancestor contexts.
+                        Map<String, ViewResolver> matchingBeans =
+                                        BeanFactoryUtils.beansOfTypeIncludingAncestors(context, ViewResolver.class, true, false);
+                        if (!matchingBeans.isEmpty()) {
+                                this.viewResolvers = new ArrayList<ViewResolver>(matchingBeans.values());
+                                // We keep ViewResolvers in sorted order.
+                                AnnotationAwareOrderComparator.sort(this.viewResolvers);
+                        }
+                }
+                else {
+                        try {
+                                ViewResolver vr = context.getBean(VIEW_RESOLVER_BEAN_NAME, ViewResolver.class);
+                                this.viewResolvers = Collections.singletonList(vr);
+                        }
+                        catch (NoSuchBeanDefinitionException ex) {
+                                // Ignore, we'll add a default ViewResolver later.
+                        }
+                }
+
+                // Ensure we have at least one ViewResolver, by registering
+                // a default ViewResolver if no other resolvers are found.
+                if (this.viewResolvers == null) {
+                        this.viewResolvers = getDefaultStrategies(context, ViewResolver.class);
+                        if (logger.isDebugEnabled()) {
+                                logger.debug("No ViewResolvers found in servlet '" + getServletName() + "': using default");
+                        }
+                }
+        }
+#+END_SRC
+
+从这里可以看出如下的设计思路
++ 1、ViewResovler对象是从IOC容器中获取的，也就是说，我们可以通过applicaiton.yml或则configuration bean的方式去配置不同的ViewResovler对象
++ 2、视图有很多类型，比如 freemakrer,jsp,xml,velocity,json等，这些不同类型的输出都可以基于ViewResolver来实现对应处理类
++ 3、IOC容器中有多个类型为ViewResovler对象时，通过AnnotationAwareOrderComparator.sort(this.viewResolvers)进行排序，这样就提供了一个渠道给外部应用进行调整，来决定优先使用哪一个ViewResolver对象来处理。
+
+该设计的思路可以解决很多应用场景，比如用户登陆，我们有很多类型的用户，分别使用不同的认证方式，比如：
++ 1、企业内部用户，使用AD认证
++ 2、企业的互联网用户，使用微信、微博等第三方认证的方式进行登陆
++ 3、企业的外包用户，使用DB认证
++ 4、对于企业内部用户，如果企业内部的AD服务器访问有问题，我们优先使用DB认证
+
+
+基于上述的场景，结合Spring中View的设计思路，我们可以如下设计：
++ 1、因为有多个不同的登陆方式，我们可以有多个认证处理类，比如: WeiboAuthenticationHandelr, ADAuthenticaitonHandler, DBAuthenticaitonHander
++ 2、因为每一个Handler的处理的用户类型是固定的，所以我们在上述的每个Handeler中增加一个方法isSupport()，用来判断当前的用户类型是否能够被该Handler处理
++ 3、所有的Handler都共同继承AuthenticationHandeler接口，其中有认证的方法： authentication()
++ 4、所有的Handler都注册到AuthenticationManager中，该Manager暴露给外部的Controller使用
++ 5、注册的Handler都继承Order接口，用于在mangaer中进行排序，因为如果AD服务器网络有问题，可以切换到DB进行验证，所以设置ADAuthenticationHandelr的order比DBAuthenticationHandler高
++ 6、在Manager中的authenticat方法中，对handlers集合做如下过滤： handers.stream.filter(h -> h.isSupport()).collect(Collectors.toSet()) , 通过这个方式过滤出所有当前能够适用的Handlers集合。
++ 7、基于6的结果，再对handler集合进行基于order接口的排序，再依次调用handler中的authenticate方法，只要有一个认证通过，我们就可以认为用户认证成功
+
+
+再举一个例子，比如商城优惠券的例子
++ 1、我们有如下种类的优惠券：单品优惠券、品类优惠券、全场优惠券、满减优惠券
++ 2、如果用户购物车中的商品即符合单品优惠券、品类优惠券、我们让优先让用户优先依次使用单品优惠券、品类优惠券、全场优惠券
++ 3、所有种类的优惠券不能叠加使用
++ 4、一个订单只能适用一个优惠券
+
+
+基于这个场景，我们借鉴Spring View的设计思路，可以进行这样设计
++ 1、每一个优惠券设计一个对应的Handler
++ 2、每一个Handler都有一个isSupport方法，用来判断当其输入的商品集合是否可以使用本优惠券
++ 3、每一个Handler都有一个setOrder方法，基于优惠券的优先级设定次序
++ 4、设计一个Manage类，注入所有的优惠券Handler
++ 5、在Manager的process方法中通过: handlers.stream.filter(h -> h.isSupport()).collect(Collectors.toSet()) 方法过滤出所有可用的优惠券Handler
++ 6、在基于过滤出的Handler通过order接口进行排序
++ 7、基于6中返回的第一个handler ，调用其doProcess方法
+
+如上的设计思路，在反思过程中，发现这是设计模式中的行为模式的运用，行为模式中的责任链模式的定义如下：
+[[https://en.wikipedia.org/wiki/Chain-of-responsibility_pattern][维基百科对责任链的定义]]
+#+BEGIN_SRC
+In object-oriented design, the chain-of-responsibility pattern
+is a design pattern consisting of a source of command objects
+and a series of processing objects.[1] Each processing object
+contains logic that defines the types of command objects that
+it can handle; the rest are passed to the next processing object in
+the chain. A mechanism also exists for adding new processing objects
+to the end of this chain. Thus, the chain of responsibility is an object
+oriented version of the if ... else if ... else if ....... else ... endif
+idiom, with the benefit that the condition–action blocks can be dynamically rearranged and reconfigured at runtime.
+
+In a variation of the standard chain-of-responsibility model, some handlers
+may act as dispatchers, capable of sending commands out in a variety of directions,
+forming a tree of responsibility. In some cases, this can occur recursively, with
+processing objects calling higher-up processing objects with commands that attempt
+to solve some smaller part of the problem; in this case recursion continues until the
+command is processed, or the entire tree has been explored. An XML interpreter might work in this manner.
+
+This pattern promotes the idea of loose coupling.
+The chain-of-responsibility pattern is structurally nearly identical to the decorator pattern,
+the difference being that for the decorator, all classes handle the request, while for the chain
+of responsibility, exactly one of the classes in the chain handles the request.
+#+END_SRC

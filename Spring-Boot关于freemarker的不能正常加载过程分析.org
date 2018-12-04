@@ -1,0 +1,363 @@
+* 问题概述
+基于上一篇[[http://wangzhenhua.rocks/spring-boot-freemarker-load-template-error.html][Spring-Boot加载jar包中freemarker报错的问题和解决过程]] 中提出提出的问题：
+为什么通过如下的配置：
+#+BEGIN_SRC java
+ @Bean
+  public ViewResolver getViewResolver() {
+    FreeMarkerViewResolver resolver = new FreeMarkerViewResolver();
+    resolver.setCache(true);
+    resolver.setPrefix("");
+    resolver.setSuffix(".ftl.html");
+    resolver.setContentType("text/html; charset=UTF-8");
+    return resolver;
+  }
+#+END_SRC
+没有被spring读取模板文件的时后加载？
+
+经过这两天的分析和排查，当将工程中包含了如下的依赖
+#+BEGIN_SRC
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-freemarker</artifactId>
+    </dependency>
+#+END_SRC
+会自动将FreeMarker的相关模板处理类配置到IOC容器中，而如果我们
+又在工程的配置中加入了关于Freemakrer的configuration bean，就会导致相同的class
+有两个instance存在于IOC容器中，于是当http请求的处理方法中，包含
+有页面模板的输出时，就会导致先被实例化的那个FreeMarkerViewResolver被使用，
+而我们在工程中将页面模板定义为以".ftl.html"为后缀，不再以.ftl为后缀，这个和默认
+的后缀不一样，如果我们工程中定义的configuration beand对象没有被spring解析模板时使用，
+就会产生找不到模板页面的错误。
+
+* 分析过程
+
+基于上一篇文章找到的解决方案，我们进行能够正常返回页面和不能正常返回页面时的日志输出对比，
+通过对比日志输出的差异来分析问题发生在哪里。
+
+首先查看能够正常返回页面时的配置和对应的freemarker的日志输出
+在application.yml的增加如下配置：
+#+BEGIN_SRC xml
+spring:
+   freemarker:
+     suffix: .ftl.html
+     template-loader-path: classpath:/templates/
+     prefer-file-system-acc
+#+END_SRC
+访问页面，能够找到页面，日志提示如下：
+#+BEGIN_SRC xml
+2018-11-10 20:00:21.137 DEBUG localhost.localdomain --- [qtp754853679-38] o.s.u.f.SpringTemplateLoader             : Looking for FreeMarker template with name [dashboard/index/index.ftl_en_US.html]
+2018-11-10 20:00:21.140 DEBUG localhost.localdomain --- [qtp754853679-38] o.s.u.f.SpringTemplateLoader             : Looking for FreeMarker template with name [dashboard/index/index.ftl_en.html]
+2018-11-10 20:00:21.141 DEBUG localhost.localdomain --- [qtp754853679-38] o.s.u.f.SpringTemplateLoader             : Looking for FreeMarker template with name [dashboard/index/index.ftl.html]
+2018-11-10 20:00:21.296 DEBUG localhost.localdomain --- [qtp754853679-38] o.s.w.s.v.ContentNegotiatingViewResolver : Returning [org.springframework.web.servlet.view.freemarker.FreeMarkerView: name '/dashboard/index/index'; URL [/dashboard/index/index.ftl.html]] based on requested media type 'text/html'
+2018-11-10 20:00:21.300 DEBUG localhost.localdomain --- [qtp754853679-38] o.s.w.s.v.f.FreeMarkerView               : Added model object 'springMacroRequestContext' of type [org.springframework.web.servlet.support.RequestContext] to request in view with name '/dashboard/index/index'
+#+END_SRC
+
+不能正常返回页面时的配置如下：
+#+BEGIN_SRC
+  @Bean
+  public ViewResolver getViewResolver() {
+    FreeMarkerViewResolver resolver = new FreeMarkerViewResolver();
+    resolver.setCache(true);
+    resolver.setPrefix("");
+    resolver.setSuffix(".ftl.html");
+    resolver.setContentType("text/html; charset=UTF-8");
+    return resolver;
+  }
+
+  @Bean
+  public FreeMarkerConfigurer freemarkerConfig() throws IOException, TemplateException {
+    FreeMarkerConfigurationFactory factory = new FreeMarkerConfigurationFactory();
+    factory.setTemplateLoaderPaths("classpath:templates");
+    factory.setDefaultEncoding("UTF-8");
+
+    FreeMarkerConfigurer result = new FreeMarkerConfigurer();
+    result.setConfiguration(factory.createConfiguration());
+    return result;
+  }
+#+END_SRC
+
+访问页面报错如下：
+#+BEGIN_SRC xml
+2018-11-10 20:29:08.073 DEBUG localhost.localdomain --- [  qtp6167135-37] o.s.w.s.v.BeanNameViewResolver           : No matching bean found for view name '/dashboard/index/index'
+2018-11-10 20:29:08.097 DEBUG localhost.localdomain --- [  qtp6167135-37] o.s.u.f.SpringTemplateLoader             : Looking for FreeMarker template with name [dashboard/index/index_en_US.ftl]
+2018-11-10 20:29:08.101 DEBUG localhost.localdomain --- [  qtp6167135-37] o.s.u.f.SpringTemplateLoader             : Looking for FreeMarker template with name [dashboard/index/index_en.ftl]
+2018-11-10 20:29:08.102 DEBUG localhost.localdomain --- [  qtp6167135-37] o.s.u.f.SpringTemplateLoader             : Looking for FreeMarker template with name [dashboard/index/index.ftl]
+2018-11-10 20:29:08.105 DEBUG localhost.localdomain --- [  qtp6167135-37] o.s.w.s.v.f.FreeMarkerView               : No FreeMarker view found for URL: /dashboard/index/index.ftl
+2018-11-10 20:29:08.111 DEBUG localhost.localdomain --- [  qtp6167135-37] o.s.u.f.SpringTemplateLoader             : Looking for FreeMarker template with name [dashboard/index/index.ftl_en_US.html]
+2018-11-10 20:29:08.112 DEBUG localhost.localdomain --- [  qtp6167135-37] o.s.u.f.SpringTemplateLoader             : Looking for FreeMarker template with name [dashboard/index/index.ftl_en.html]
+2018-11-10 20:29:08.112 DEBUG localhost.localdomain --- [  qtp6167135-37] o.s.u.f.SpringTemplateLoader             : Looking for FreeMarker template with name [dashboard/index/index.ftl.html]
+2018-11-10 20:29:08.287 DEBUG localhost.localdomain --- [  qtp6167135-37] o.s.w.s.v.ContentNegotiatingViewResolver : Returning [org.springframework.web.servlet.view.InternalResourceView: name '/dashboard/index/index'; URL [/dashboard/index/index]] based on requested media type 'text/html'
+2018-11-10 20:29:08.290 DEBUG localhost.localdomain --- [  qtp6167135-37] o.s.w.s.v.InternalResourceView           : Forwarding to resource [/dashboard/index/index] in InternalResourceView '/dashboard/index/index'
+#+END_SRC
+
+其中值得注意的日志有：
+#+BEGIN_SRC
+No FreeMarker view found for URL: /dashboard/index/index.ftl
+o.s.w.s.v.ContentNegotiatingViewResolver : Returning [org.springframework.web.servlet.view.InternalResourceView: name '/dashboard/index/index'; URL [/dashboard/index/index]] based on requested media type 'text/html'
+#+END_SRC
+这里为什么没有按照configuration bean中.ftl.html的后缀来加载模板？
+ContentNegotiatingViewResolver返回最终的ViewResolver对象为InternalResourceView，而不是FreemarkerViewResovler？
+当然现在也不太理解ContentNegotiatingViewResolver这个对象的作用是什么，但是根据名字的含义推测应该是调度出一个ViewResovler对象出来给Spring使用。
+查看了ContentNegotiatingViewResolver的源码，它会在servlet容器初始化的时，从IOC容器中获取所有ViewResolver类型的对象，并注入到它自身的viewCandiates对象中。
+其中有一个方法:getBestView，该方法是根据请求返回的响应中包含的页面信息加载对应的ViewResolver对象。
+
+根据如上阅读源码获取到的一些信息，有如下的思考：IOC容器中有多少ViewResolver类型的对象？如果有多个ViewResolver类型的对象，他们是如何被调度使用的？
+
+根据这两个疑问，在业务方法中增加如下的代码，用于查看ViewResolver类型的对象在IOC容器中有哪些？
+#+BEGIN_SRC java
+ @GetMapping("/dashboard/index")
+  public String index() {
+    Map<String, ViewResolver> matchingBeans =
+        BeanFactoryUtils.beansOfTypeIncludingAncestors(context, ViewResolver.class, true, false);
+
+    logger.debug("size of view resolver size is : {}", matchingBeans.size());
+    matchingBeans
+           .entrySet()
+           .stream()
+           .map(i -> i.getValue())
+           .forEach(i -> logger.debug("resolver class name : {}" ,i.getClass()));
+    return "/dashboard/index/index";
+  }
+#+END_SRC
+
+重启容器，访问地址 /uc/dashbaord/index , 有如下日志输出：
+
+#+BEGIN_SRC xml
+2018-11-11 11:19:37.658 DEBUG localhost.localdomain --- [qtp940369315-39] c.s.u.p.ServerCheckPrivilegeInterceptor  : request url /uc/dashboard/index, and http method is GET
+2018-11-11 11:19:37.699 DEBUG localhost.localdomain --- [qtp940369315-39] c.s.u.w.a.IndexController                : size of view resolver size is : 6
+2018-11-11 11:19:37.702 DEBUG localhost.localdomain --- [qtp940369315-39] c.s.u.w.a.IndexController                : resolver class name : class org.springframework.web.servlet.view.BeanNameViewResolver
+2018-11-11 11:19:37.703 DEBUG localhost.localdomain --- [qtp940369315-39] c.s.u.w.a.IndexController                : resolver class name : class org.springframework.web.servlet.view.ViewResolverComposite
+2018-11-11 11:19:37.704 DEBUG localhost.localdomain --- [qtp940369315-39] c.s.u.w.a.IndexController                : resolver class name : class org.springframework.web.servlet.view.InternalResourceViewResolver
+2018-11-11 11:19:37.704 DEBUG localhost.localdomain --- [qtp940369315-39] c.s.u.w.a.IndexController                : resolver class name : class org.springframework.web.servlet.view.ContentNegotiatingViewResolver
+2018-11-11 11:19:37.705 DEBUG localhost.localdomain --- [qtp940369315-39] c.s.u.w.a.IndexController                : resolver class name : class org.springframework.web.servlet.view.freemarker.FreeMarkerViewResolver
+2018-11-11 11:19:37.706 DEBUG localhost.localdomain --- [qtp940369315-39] c.s.u.w.a.IndexController                : resolver class name : class org.springframework.web.servlet.view.freemarker.FreeMarkerViewResolver
+#+END_SRC
+从上述的日志输出中发现如下信息
++ 在IOC容器中存在6个ViewResolver类型的对象
++ 存在两个相同类型的FreeMarkerViewResolver对象
+
+
+
+为何有两个FreeMarkerViewResolver对象? 查看FreeMarkerAutoConfiguration对象，发现它会自动注册FreeMarkerViewResolver对象到IOC容器中，
+而项目中通过configuraion bean的形式注入了一个FreeMarkerViewResolver对象，所以存在两个。发现FreeMarkerAutoConfiguration中的ViewResovler的定义，
+发现它默认是以'.ftl'格式来加载模板文件的，所以日志输出：
+#+BEGIN_SRC
+No FreeMarker view found for URL: /dashboard/index/index.ftl
+#+END_SRC
+所以这里解释了为何项目中定义的FreeMarkerViewResolver对象没有起作用，是因为spring优先使用了spring-boot-starter-freemarker组件中定义的FreeMarkerViewResolver对象。
+
+那这里我们需要搞明白Spring是基于何种机制来加载ViewResolver对象的？
+
+翻看ContentNegotiatingViewResolver.java中的代码，发现有如下关于模板选择的处理逻辑:
+#+BEGIN_SRC java
+private View getBestView(List<View> candidateViews, List<MediaType> requestedMediaTypes, RequestAttributes attrs) {
+                ......
+                ......
+                ......
+                for (MediaType mediaType : requestedMediaTypes) {
+                        for (View candidateView : candidateViews) {
+                                if (StringUtils.hasText(candidateView.getContentType())) {
+                                        MediaType candidateContentType = MediaType.parseMediaType(candidateView.getContentType());
+                                        if (mediaType.isCompatibleWith(candidateContentType)) {
+                                                if (logger.isDebugEnabled()) {
+                                                        logger.debug("Returning [" + candidateView + "] based on requested media type '" +
+                                                                        mediaType + "'");
+                                                }
+                                                attrs.setAttribute(View.SELECTED_CONTENT_TYPE, mediaType, RequestAttributes.SCOPE_REQUEST);
+                                                return candidateView;
+                                        }
+                                }
+                        }
+                }
+                return null;
+        }
+#+END_SRC
+candiateViews是一个ViewResolver类型对象的集合，从这个集合里依次遍历出每一个viewResolver，如果当前请求的媒体类型和集合里第一个遍历出来的viewResolver
+的mediaType匹配，那么就返回该resovler，结合上面的报错日志，在IOC容器中有如下的viewResolvers类型的对象存在：
+#+BEGIN_SRC
+ org.springframework.web.servlet.view.BeanNameViewResolver
+ org.springframework.web.servlet.view.ViewResolverComposite
+ org.springframework.web.servlet.view.InternalResourceViewResolver
+ org.springframework.web.servlet.view.ContentNegotiatingViewResolver
+ org.springframework.web.servlet.view.freemarker.FreeMarkerViewResolver
+ org.springframework.web.servlet.view.freemarker.FreeMarkerViewResolver
+#+END_SRC
+当前http请求对应的资源类型为text/html,而在如上的viewResolver中第一个匹配到该类型的是：
+#+BEGIN_SRC java
+ org.springframework.web.servlet.view.InternalResourceViewResolver
+#+END_SRC
+所以我们可到上面的报错中有如下的错误日志：
+#+BEGIN_SRC java
+2018-11-11 16:53:14.354 DEBUG localhost.localdomain --- [qtp940369315-39] o.s.w.s.v.ContentNegotiatingViewResolver : Returning [org.springframework.web.servlet.view.InternalResourceView: name '/dashboard/index/index'; URL [/dashboard/index/index]] based on requested media type 'text/html'
+2018-11-11 16:53:14.360 DEBUG localhost.localdomain --- [qtp940369315-39] o.s.w.s.v.InternalResourceView           : Forwarding to resource [/dashboard/index/index] in InternalResourceView '/dashboard/index/index'
+#+END_SRC
+
+那么到分析到这里，问题就变为如下两个问题：
++ 让IOC容器中只存在我们项目中定义的FreeMarkerViewResovler对象
++ 在ContentNegotiatingViewResolver的viewResolvers集合中，将FreeMarkerViewResolver调整到InternalResourceViewResolver之前
+
+根据spring-boot-starter-freemarker中FreeMarkerAutoConfiguraion关于FreeMarkerViewResolver对象的定义：
+#+BEGIN_SRC java
+                @Bean
+                @ConditionalOnMissingBean(name = "freeMarkerViewResolver")
+                @ConditionalOnProperty(name = "spring.freemarker.enabled", matchIfMissing = true)
+                public FreeMarkerViewResolver freeMarkerViewResolver() {
+                        FreeMarkerViewResolver resolver = new FreeMarkerViewResolver();
+                        this.properties.applyToViewResolver(resolver);
+                        return resolver;
+                }
+#+END_SRC
+也就是说如果IOC中存在freeMarkerViewResolver对象，它就不会再去定义FreeMarkerViewResovler对象，所以尝试在项目中增加bean的name标识为freeMarkerViewResovler
+#+BEGIN_SRC
+  @Bean(name = "freeMarkerViewResolver")
+  public ViewResolver getViewResolver() {
+    FreeMarkerViewResolver resolver = new FreeMarkerViewResolver("",".ftl.html");
+    resolver.setCache(true);
+    resolver.setOrder(1);
+    resolver.setContentType("text/html; charset=UTF-8");
+    return resolver;
+  }
+#+END_SRC
+再启动工程，访问http接口地址，日志输出如下：
+#+BEGIN_SRC java
+2018-11-11 16:53:14.163 DEBUG localhost.localdomain --- [qtp940369315-39] c.s.u.w.a.IndexController                : size of view resolver size is : 5
+2018-11-11 16:53:14.166 DEBUG localhost.localdomain --- [qtp940369315-39] c.s.u.w.a.IndexController                : resolver class name : class org.springframework.web.servlet.view.BeanNameViewResolver
+2018-11-11 16:53:14.167 DEBUG localhost.localdomain --- [qtp940369315-39] c.s.u.w.a.IndexController                : resolver class name : class org.springframework.web.servlet.view.ViewResolverComposite
+2018-11-11 16:53:14.168 DEBUG localhost.localdomain --- [qtp940369315-39] c.s.u.w.a.IndexController                : resolver class name : class org.springframework.web.servlet.view.InternalResourceViewResolver
+2018-11-11 16:53:14.169 DEBUG localhost.localdomain --- [qtp940369315-39] c.s.u.w.a.IndexController                : resolver class name : class org.springframework.web.servlet.view.ContentNegotiatingViewResolver
+2018-11-11 16:53:14.169 DEBUG localhost.localdomain --- [qtp940369315-39] c.s.u.w.a.IndexController                : resolver class name : class org.springframework.web.servlet.view.freemarker.FreeMarkerViewResolver
+2018-11-11 16:53:14.174 DEBUG localhost.localdomain --- [qtp940369315-39] o.s.w.s.v.ContentNegotiatingViewResolver : Requested media types are [text/html, application/xhtml+xml, image/webp, image/apng, application/xml;q=0.9, */*;q=0.8] based on Accept header types and producible media types [*/*])
+2018-11-11 16:53:14.175 DEBUG localhost.localdomain --- [qtp940369315-39] o.s.w.s.v.BeanNameViewResolver           : No matching bean found for view name '/dashboard/index/index'
+2018-11-11 16:53:14.204 DEBUG localhost.localdomain --- [qtp940369315-39] o.s.u.f.SpringTemplateLoader             : Looking for FreeMarker template with name [dashboard/index/index.ftl_en_US.html]
+2018-11-11 16:53:14.207 DEBUG localhost.localdomain --- [qtp940369315-39] o.s.u.f.SpringTemplateLoader             : Looking for FreeMarker template with name [dashboard/index/index.ftl_en.html]
+2018-11-11 16:53:14.208 DEBUG localhost.localdomain --- [qtp940369315-39] o.s.u.f.SpringTemplateLoader             : Looking for FreeMarker template with name [dashboard/index/index.ftl.html]
+2018-11-11 16:53:14.354 DEBUG localhost.localdomain --- [qtp940369315-39] o.s.w.s.v.ContentNegotiatingViewResolver : Returning [org.springframework.web.servlet.view.InternalResourceView: name '/dashboard/index/index'; URL [/dashboard/index/index]] based on requested media type 'text/html'
+2018-11-11 16:53:14.360 DEBUG localhost.localdomain --- [qtp940369315-39] o.s.w.s.v.InternalResourceView           : Forwarding to resource [/dashboard/index/index] in InternalResourceView '/dashboard/index/index'
+#+END_SRC
+
+所以看出我们上述的调整的预期达到了：spring寻找的以.ftl.html后缀的模板，不再以.ftl为后缀寻找模板，而且输出的FreeMarkerViewResolver对象只有一个。
+
+下面开始解决如何让ContentNegitiatingViewResolver优先使用FreeMarkerViewResovler对象的问题
+
+看到ContentNegotiatingViewResolver.java有如下的代码，其中有对viewresolvers进行排序的逻辑
+#+BEGIN_SRC java
+        @Override
+        protected void initServletContext(ServletContext servletContext) {
+                Collection<ViewResolver> matchingBeans =
+                                BeanFactoryUtils.beansOfTypeIncludingAncestors(getApplicationContext(), ViewResolver.class).values();
+                 ......
+                 this.viewResolvers = new ArrayList<ViewResolver>(matchingBeans.size());
+                 for (ViewResolver viewResolver : matchingBeans) {
+                 if (this != viewResolver) {
+                        this.viewResolvers.add(viewResolver);
+                 }
+                 ......
+                AnnotationAwareOrderComparator.sort(this.viewResolvers);
+                this.cnmFactoryBean.setServletContext(servletContext);
+        }
+
+#+END_SRC
+
+翻看了下这里的AnnotationAwareOrderComparator.sort的源码，
+发现这里基于JDK中的sort机制进行排序，其中comparator是spring根据order接口进行自定义的，规则如下：
+#+BEGIN_SRC
+public class OrderComparator implements Comparator<Object> {
+
+        @Override
+        public int compare(Object o1, Object o2) {
+                return doCompare(o1, o2, null);
+        }
+
+        private int doCompare(Object o1, Object o2, OrderSourceProvider sourceProvider) {
+                boolean p1 = (o1 instanceof PriorityOrdered);
+                boolean p2 = (o2 instanceof PriorityOrdered);
+                if (p1 && !p2) {
+                        return -1;
+                }
+                else if (p2 && !p1) {
+                        return 1;
+                }
+
+                // Direct evaluation instead of Integer.compareTo to avoid unnecessary object creation.
+                int i1 = getOrder(o1, sourceProvider);
+                int i2 = getOrder(o2, sourceProvider);
+                return (i1 < i2) ? -1 : (i1 > i2) ? 1 : 0;
+
+        ......
+        .....
+#+END_SRC
+再查看FreemarkerViewResolver中有setOrder方法，再查看Order的定义
+#+BEGIN_SRC java
+public interface Ordered {
+
+        /**
+         * Useful constant for the highest precedence value.
+         * @see java.lang.Integer#MIN_VALUE
+         */
+        int HIGHEST_PRECEDENCE = Integer.MIN_VALUE;
+
+        /**
+         * Useful constant for the lowest precedence value.
+         * @see java.lang.Integer#MAX_VALUE
+         */
+        int LOWEST_PRECEDENCE = Integer.MAX_VALUE;
+
+
+        /**
+         * Get the order value of this object.
+         * <p>Higher values are interpreted as lower priority. As a consequence,
+         * the object with the lowest value has the highest priority (somewhat
+         * analogous to Servlet {@code load-on-startup} values).
+         * <p>Same order values will result in arbitrary sort positions for the
+         * affected objects.
+         * @return the order value
+         * @see #HIGHEST_PRECEDENCE
+         * @see #LOWEST_PRECEDENCE
+         */
+        int getOrder();
+
+}
+#+END_SRC
+
+可以看出数值越小，优先级越高，所以在configuration bean中调整为如下定义:
+#+BEGIN_SRC java
+  @Bean(name = "freeMarkerViewResolver")
+  public ViewResolver getViewResolver() {
+    FreeMarkerViewResolver resolver = new FreeMarkerViewResolver("",".ftl.html");
+    resolver.setCache(true);
+    resolver.setOrder(1);
+    resolver.setContentType("text/html; charset=UTF-8");
+    return resolver;
+  }
+#+END_SRC
+再启动工程，访问http接口，页面输出正常。
+
+
+* 总结
+这个问题花费了比较长的时间，总结来说，我们在使用Spring-Boot的时后，需要按照它推荐的方式，
+比如这里我们对于freemarker的行为调整，也只是将后缀调整为.ftl.html，所以只需要在application.yml
+中增加一个配置就可以了，根本不需要通过configuraion bean的方式进行调整，而在定义FreeMarkerViewResovler对象
+的时后，我们没有按照以实际类型的方式定义bean，而是用它的抽象类型定义bean对象:
+#+BEGIN_SRC java
+  @Bean
+  public ViewResolver getViewResolver() {
+    FreeMarkerViewResolver resolver = new FreeMarkerViewResolver("",".ftl.html");
+    resolver.setCache(true);
+    resolver.setOrder(1);
+    resolver.setContentType("text/html; charset=UTF-8");
+    return resolver;
+  }
+#+END_SRC
+而如果用实际的类型方式来定义bean：
+#+BEGIN_SRC java
+  public FreeMarkerViewResolver getViewResolver() {
+    FreeMarkerViewResolver resolver = new FreeMarkerViewResolver("",".ftl.html");
+    resolver.setCache(true);
+    resolver.setOrder(1);
+    resolver.setContentType("text/html; charset=UTF-8");
+    return resolver;
+  }
+#+END_SRC
+那么bean的name默认就是freeMarkerViewResovler，所以spring-boot-starter-freemarker中的对象就不会被加载到IOC中，
+
+所以上述两个常规的做法都被突破，就导致了这个问题的发生。但是这个问题的发生也带动我去研究它内部的工作机制，有得有失。

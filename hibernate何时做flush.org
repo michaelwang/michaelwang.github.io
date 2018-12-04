@@ -1,0 +1,33 @@
+基于文章[[http://wangzhenhua.rocks/spring-data-query-transaction-analysis.html][Spring-Data查询事务的分析三]] 中提出要弄明白hibernate的dirty checking的原理，
+发现需要先弄明白hibernate的flush原理，于是先开始研究flush会做哪些事情，以及在何时触发执行
+
+Hibernate源码对flush有如下定义(注：本文是基于hibernate 5.3.7版本调研)
+#+BEGIN_SRC java
+        /**
+         * Force this session to flush. Must be called at the end of a
+         * unit of work, before committing the transaction and closing the
+         * session (depending on {@link #setFlushMode(FlushMode)},
+         * {@link Transaction#commit()} calls this method).
+         * <p/>
+         * <i>Flushing</i> is the process of synchronizing the underlying persistent
+         * store with persistable state held in memory.
+         *
+         * @throws HibernateException Indicates problems flushing the session or
+         * talking to the database.
+         */
+        void flush() throws HibernateException;
+#+END_SRC
+在工作单元结束时，在事务提交前或者关闭session时,触发执行flush()方法，flush会将内存中的对象同步到DB中去，
+在SessionImpl类中有如下方法可能会触发flush方法的执行
+#+BEGIN_SRC java
+public List list(String query, QueryParameters queryParameters)
+public int executeUpdate(String query, QueryParameters queryParameters) throws HibernateException
+public int executeNativeUpdate(
+                        NativeSQLQuerySpecification nativeQuerySpecification,
+                        QueryParameters queryParameters) throws HibernateException
+......
+#+END_SRC
+类的执行顺序为:
+SessionImpl ---> AutoFlushEventListener -----> FlushEntityEventListener
+
+下一篇研究hibernate是如何做flush。

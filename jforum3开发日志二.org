@@ -1,0 +1,27 @@
+通过git下载代码到本地，阅读README.md了解到这是一个maven构建的工程，
+执行如下命令，就可以完成构建
+#+BEGIN_SRC
+maven clean package
+#+END_SRC
+
+因为这是一个比较老旧的项目，不能像spring boot工程那样，直接通过java -jar的方式启动。
+需要将构建好了war包放入jetty容器中才能启动。
+
+启动后发现页面的css不能被加载出来，通过分析静态资源的请求路经，发现路经中多了一个'/',比如：
+
+#+BEGIN_SRC
+http://localhost:8080/jforum3/templates/default//styles/style.css
+#+END_SRC
+
+再到工程中查看页面中加载静态资源逻辑，发现它使用freemarker的自定义标签，进行加载静态资源，
+这个标签的用法：
+#+BEGIN_SRC
+<jforum:templateResource item='/styles/style.css'/>
+#+END_SRC
+
+再查看templateResource的代码逻辑:TemplateResourceTag.java,发现只需要将item变量去除第一个‘/’即可,添加如下代码:
+#+BEGIN_SRC
+       String item = this.item.substring(1);
+#+END_SRC
+
+再重新启动工程，静态资源可以正常加载。

@@ -1,0 +1,59 @@
+* 问题概述
+在Java工程中比较常见的编程模式中，会对User、Order这些实体创建
+一些service对象，比如：UserSerive， OrderService，
+然后我们会将User,Order相关的逻辑放入各自相关的service对象中。
+如果user和order有一些交叉的逻辑，比如
+
++ 查找所有最近1年注册的用户，最近3个月单笔订单大于1000元的order信息
++ 查找2018年端午节有订单数据的前100个用户
+
+不管是从User角度查找数据，还是从Order角度查找数据，都可以解决上述问题，
+似乎我们可以将上述逻辑即可以组织在UserService中，又可以组织在OrderService中。
+
+而这就导致如下两个问题：
++ UserService和OrderService职责划分不清
++ UserService和OrderService有循环依赖
+
+类似这种问题一个工程中如果大量出现，
+又随着项目开发周期、人员的更替等一些因素影响，
+会导致项目需要付出高昂的维护成本。
+
+* 解决方案
+
+如果解决这个问题？
+在从《领域驱动设计》这一本书里，找到了一些概念：
++ Repository
+比如UserRepository就包含了和用户相关的一些领域动作，而不应该包含和User以外的业务操作，只包含用户的删除、增加、查询、更新等领域内的操作
+OrderRepository就包含：order对象的增加、删除、查询、更新等操作
+
++ Value Object
+比如UserVO,可以包含和用户相关但是永远不会
+发生变化，又会被复用的一些信息，比如家庭地址信息、工作单位等就可以组织在Value Ojbect中。
+
++ Service
+这里是以模型的动作命名Service对象，而这些动作是不适合放入到领域对象中的。
+
++ Layered Architecture
+任何元素只能依赖本层的其他元素和下层元素，任何需要向上的通信必须通过间接的方式进行。
+
+回到我们刚才讨论的问题，根据DDD的上述几个规则，就应该有如下的几个对象和规则
++ 创建UserVO对象
++ 创建UserRepository对象
++ 创建OrderVO对象
++ 创建OrderRepository对象
++ 在层次结构上，User应该在Order的下方：也就是意味着：User相关的对象不能依赖Order相关对象，但是Order的相关对象可以依赖User的相关对象
++ 创建FindUsersByRegisterDateInOneYearAndWhoseOrdersAmountGreaterThan1000InLastThreeMonthService对象
+  这个对象是用来查找用户订单的领域服务对象，这个对象聚合了UserRepository和OrderRepository,首先从userRepository可以查询出最近一年内注册的用户信息，
+  再根据查询到的用户信息，到OrderRepository的search方法中：根据用户、时间、金额进行条件组合查询，就可以得到符合特定条件的订单数据
++ 创建Find100TopUsersWhoseOrderOnDragonBoatFestivalService对象
+  这个对象持有OrderRepository
+  首先从OrderRepository中根据据时间法查找出端午节的订单信息，
+  根据层次结构的规则，Order实体中可以以ManyToOne的形式关联User对象，所以就可以从查询到的Order中遍历出所有的user对象。
+
+通过如上，可以避免之前提到的职责不清楚和循环依赖的问题。
+
+随着项目的版本不断迭代，领域知识会被大量积累到领域层，而且不会有太大的变化，
+而应用逻辑会随着市场变化，公司业务规则调整会发生频繁的变动，
+此时这些应用逻辑的变动就可以通过协调多个领域对象来完成。
+
+基于这样的规则，我们可以把不经常变的和易变的分离开，降低项目开发和维护的复杂度。

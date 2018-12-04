@@ -1,0 +1,372 @@
+* 概述
+按照文章[[http://wangzhenhua.rocks/spring-boot-multi-maven-module.html][将基于Spring-Boot开发工程调整成多Maven-Module的实战总结]] 的调整步骤，
+将uc的web模块进行了多个子module的重构之后，出现了找不到freemakrer模板的问题，
+之前没有这个问题。通过将configuration bean的中的freemarker的配置行为
+调整到application.yml中，问题就解决了。
+
+通过configuration bean的模式配置和通过application.yml的模式配置差异
+就在于通过configuration bean配置的方式导致Spring在读取模板文件时，
+没有按照以.ftl.html为后缀的格式读取文件，而是按照以.ftl为后缀的格式去读取文件，
+实际上模板文件是以.ftl.html格式存储的，所以导致读取不到模板文件的错误。
+另外在问题的处理过程中发现了一个spirng内部的处理freemaker模板的过程：
+就是spring默认是用基于java.io.File对象的加载器读取freemarker的模板文件，
+当出现错误的时后，才使用可以读取jar包资源的加载器加载文件，这样的做的目的
+是为了可以让开发人员快速的调试代码。
+
+下面是问题的详细分析过程：
+
+* 问题分析过程
+
+问题发生时的现象时：访问系统的登陆接口时,浏览器上出现404的错误信息，
+根据后台日志输出，定位出接口的请求已经被Controller中的方法处理了，
+按照逻辑是返回对应的freemarker页面，所以猜测应该是spring没有找到模板文件导致的错误。
+
+下面开始排查freemarker的相关配置和日志输出：
+在web-configuration模块中，有关于freemarker的configuraiton bean的如下配置：
+#+BEGIN_SRC java
+ @Bean
+  public ViewResolver getViewResolver() {
+    FreeMarkerViewResolver resolver = new FreeMarkerViewResolver();
+    resolver.setCache(true);
+    resolver.setPrefix("");
+    resolver.setSuffix(".ftl.html");
+    resolver.setContentType("text/html; charset=UTF-8");
+    return resolver;
+  }
+
+  @Bean
+  public FreeMarkerConfigurer freemarkerConfig() throws IOException, TemplateException {
+    FreeMarkerConfigurationFactory factory = new FreeMarkerConfigurationFactory();
+    factory.setTemplateLoaderPaths("classpath:templates", "src/main/resource/templates");
+    factory.setDefaultEncoding("UTF-8");
+    FreeMarkerConfigurer result = new FreeMarkerConfigurer();
+    result.setConfiguration(factory.createConfiguration());
+    return result;
+  }
+#+END_SRC
+
+为了定位错误，打开spring关于freemarker的日志输出配置：
+#+BEGIN_SRC xml
+        <logger name="org.springframework.web.servlet.view.freemarker" level="debug" additivity="false">
+            <appender-ref ref="FILE"/>
+            <appender-ref ref="STDOUT"/>
+            <appender-ref ref="TcpAppender"/>
+        </logger>
+
+        <logger name="org.springframework.ui.freemarker" level="debug" additivity="false">
+            <appender-ref ref="FILE"/>
+            <appender-ref ref="STDOUT"/>
+            <appender-ref ref="TcpAppender"/>
+        </logger>
+
+#+END_SRC
+
+有如下的报错信息:
+#+BEGIN_SRC xml
+2018-11-07 16:29:07.281 DEBUG localhost.localdomain --- [           main] o.s.u.f.FreeMarkerConfigurationFactory   : Cannot resolve template loader path [classpath:templates] to [java.io.File]: using SpringTemplateLoader as fallback
+java.io.FileNotFoundException: class path resource [templates] cannot be resolved to absolute file path because it does not reside in the file system: jar:file:/home/michael/projects/java/shanghangliangfan/fresh-usercenter-server/web/web-app/target/web-app-6.1.0.0-SNAPSHOT.jar!/BOOT-INF/classes!/templates
+        at org.springframework.util.ResourceUtils.getFile(ResourceUtils.java:218)
+        at org.springframework.core.io.AbstractFileResolvingResource.getFile(AbstractFileResolvingResource.java:52)
+        at org.springframework.ui.freemarker.FreeMarkerConfigurationFactory.getTemplateLoaderForPath(FreeMarkerConfigurationFactory.java:338)
+        at org.springframework.ui.freemarker.FreeMarkerConfigurationFactory.createConfiguration(FreeMarkerConfigurationFactory.java:290)
+        at com.shihang.usercenter.configuration.ServerConfiguration.freemarkerConfig(ServerConfiguration.java:125)
+        at com.shihang.usercenter.configuration.ServerConfiguration$$EnhancerBySpringCGLIB$$220081ee.CGLIB$freemarkerConfig$12(<generated>)
+        at com.shihang.usercenter.configuration.ServerConfiguration$$EnhancerBySpringCGLIB$$220081ee$$FastClassBySpringCGLIB$$8a816330.invoke(<generated>)
+        at org.springframework.cglib.proxy.MethodProxy.invokeSuper(MethodProxy.java:228)
+        at org.springframework.context.annotation.ConfigurationClassEnhancer$BeanMethodInterceptor.intercept(ConfigurationClassEnhancer.java:358)
+        at com.shihang.usercenter.configuration.ServerConfiguration$$EnhancerBySpringCGLIB$$220081ee.freemarkerConfig(<generated>)
+        at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+        at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+        at java.lang.reflect.Method.invoke(Method.java:498)
+        at org.springframework.beans.factory.support.SimpleInstantiationStrategy.instantiate(SimpleInstantiationStrategy.java:162)
+        at org.springframework.beans.factory.support.ConstructorResolver.instantiateUsingFactoryMethod(ConstructorResolver.java:588)
+        at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.instantiateUsingFactoryMethod(AbstractAutowireCapableBeanFactory.java:1173)
+        at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBeanInstance(AbstractAutowireCapableBeanFactory.java:1067)
+        at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.doCreateBean(AbstractAutowireCapableBeanFactory.java:513)
+        at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBean(AbstractAutowireCapableBeanFactory.java:483)
+        at org.springframework.beans.factory.support.AbstractBeanFactory$1.getObject(AbstractBeanFactory.java:306)
+        at org.springframework.beans.factory.support.DefaultSingletonBeanRegistry.getSingleton(DefaultSingletonBeanRegistry.java:230)
+        at org.springframework.beans.factory.support.AbstractBeanFactory.doGetBean(AbstractBeanFactory.java:302)
+        at org.springframework.beans.factory.support.AbstractBeanFactory.getBean(AbstractBeanFactory.java:197)
+        at org.springframework.beans.factory.support.DefaultListableBeanFactory.preInstantiateSingletons(DefaultListableBeanFactory.java:761)
+        at org.springframework.context.support.AbstractApplicationContext.finishBeanFactoryInitialization(AbstractApplicationContext.java:866)
+        at org.springframework.context.support.AbstractApplicationContext.refresh(AbstractApplicationContext.java:542)
+        at org.springframework.boot.context.embedded.EmbeddedWebApplicationContext.refresh(EmbeddedWebApplicationContext.java:122)
+        at org.springframework.boot.SpringApplication.refresh(SpringApplication.java:737)
+        at org.springframework.boot.SpringApplication.refreshContext(SpringApplication.java:370)
+        at org.springframework.boot.SpringApplication.run(SpringApplication.java:314)
+        at org.springframework.boot.SpringApplication.run(SpringApplication.java:1162)
+        at org.springframework.boot.SpringApplication.run(SpringApplication.java:1151)
+        at com.shihang.usercenter.web.UserCenterWebApplication.main(UserCenterWebApplication.java:10)
+        at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+        at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+        at java.lang.reflect.Method.invoke(Method.java:498)
+        at org.springframework.boot.loader.MainMethodRunner.run(MainMethodRunner.java:48)
+        at org.springframework.boot.loader.Launcher.launch(Launcher.java:87)
+        at org.springframework.boot.loader.Launcher.launch(Launcher.java:50)
+        at org.springframework.boot.loader.JarLauncher.main(JarLauncher.java:51)
+2018-11-07 16:29:07.295  INFO localhost.localdomain --- [           main] o.s.u.f.SpringTemplateLoader             : SpringTemplateLoader for FreeMarker: using resource loader [org.springframework.core.io.DefaultResourceLoader@2c8a445b] and template loader path [classpath:templates/]
+2018-11-07 16:29:07.297 DEBUG localhost.localdomain --- [           main] o.s.u.f.FreeMarkerConfigurationFactory   : Cannot resolve template loader path [src/main/resource/templates] to [java.io.File]: using SpringTemplateLoader as fallback
+java.io.FileNotFoundException: class path resource [src/main/resource/templates] cannot be resolved to URL because it does not exist
+        at org.springframework.core.io.ClassPathResource.getURL(ClassPathResource.java:187)
+        at org.springframework.core.io.AbstractFileResolvingResource.getFile(AbstractFileResolvingResource.java:48)
+        at org.springframework.ui.freemarker.FreeMarkerConfigurationFactory.getTemplateLoaderForPath(FreeMarkerConfigurationFactory.java:338)
+        at org.springframework.ui.freemarker.FreeMarkerConfigurationFactory.createConfiguration(FreeMarkerConfigurationFactory.java:290)
+        at com.shihang.usercenter.configuration.ServerConfiguration.freemarkerConfig(ServerConfiguration.java:125)
+        at com.shihang.usercenter.configuration.ServerConfiguration$$EnhancerBySpringCGLIB$$220081ee.CGLIB$freemarkerConfig$12(<generated>)
+        at com.shihang.usercenter.configuration.ServerConfiguration$$EnhancerBySpringCGLIB$$220081ee$$FastClassBySpringCGLIB$$8a816330.invoke(<generated>)
+        at org.springframework.cglib.proxy.MethodProxy.invokeSuper(MethodProxy.java:228)
+        at org.springframework.context.annotation.ConfigurationClassEnhancer$BeanMethodInterceptor.intercept(ConfigurationClassEnhancer.java:358)
+        at com.shihang.usercenter.configuration.ServerConfiguration$$EnhancerBySpringCGLIB$$220081ee.freemarkerConfig(<generated>)
+        at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+        at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+        at java.lang.reflect.Method.invoke(Method.java:498)
+        at org.springframework.beans.factory.support.SimpleInstantiationStrategy.instantiate(SimpleInstantiationStrategy.java:162)
+        at org.springframework.beans.factory.support.ConstructorResolver.instantiateUsingFactoryMethod(ConstructorResolver.java:588)
+        at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.instantiateUsingFactoryMethod(AbstractAutowireCapableBeanFactory.java:1173)
+        at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBeanInstance(AbstractAutowireCapableBeanFactory.java:1067)
+        at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.doCreateBean(AbstractAutowireCapableBeanFactory.java:513)
+        at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBean(AbstractAutowireCapableBeanFactory.java:483)
+        at org.springframework.beans.factory.support.AbstractBeanFactory$1.getObject(AbstractBeanFactory.java:306)
+        at org.springframework.beans.factory.support.DefaultSingletonBeanRegistry.getSingleton(DefaultSingletonBeanRegistry.java:230)
+        at org.springframework.beans.factory.support.AbstractBeanFactory.doGetBean(AbstractBeanFactory.java:302)
+        at org.springframework.beans.factory.support.AbstractBeanFactory.getBean(AbstractBeanFactory.java:197)
+        at org.springframework.beans.factory.support.DefaultListableBeanFactory.preInstantiateSingletons(DefaultListableBeanFactory.java:761)
+        at org.springframework.context.support.AbstractApplicationContext.finishBeanFactoryInitialization(AbstractApplicationContext.java:866)
+        at org.springframework.context.support.AbstractApplicationContext.refresh(AbstractApplicationContext.java:542)
+        at org.springframework.boot.context.embedded.EmbeddedWebApplicationContext.refresh(EmbeddedWebApplicationContext.java:122)
+        at org.springframework.boot.SpringApplication.refresh(SpringApplication.java:737)
+        at org.springframework.boot.SpringApplication.refreshContext(SpringApplication.java:370)
+        at org.springframework.boot.SpringApplication.run(SpringApplication.java:314)
+        at org.springframework.boot.SpringApplication.run(SpringApplication.java:1162)
+        at org.springframework.boot.SpringApplication.run(SpringApplication.java:1151)
+        at com.shihang.usercenter.web.UserCenterWebApplication.main(UserCenterWebApplication.java:10)
+        at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+        at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+        at java.lang.reflect.Method.invoke(Method.java:498)
+        at org.springframework.boot.loader.MainMethodRunner.run(MainMethodRunner.java:48)
+        at org.springframework.boot.loader.Launcher.launch(Launcher.java:87)
+        at org.springframework.boot.loader.Launcher.launch(Launcher.java:50)
+        at org.springframework.boot.loader.JarLauncher.main(JarLauncher.java:51)
+2018-11-07 16:29:07.298  INFO localhost.localdomain --- [           main] o.s.u.f.SpringTemplateLoader             : SpringTemplateLoader for FreeMarker: using resource loader [org.springframework.core.io.DefaultResourceLoader@2c8a445b] and template loader path [src/main/resource/templates/]
+2018-11-07 16:40:04.902  INFO localhost.localdomain --- [tp1886938557-45] c.s.m.e.s.TokenService                   : getToken from request header: null
+......
+......
+......
+2018-11-07 16:40:04.960 DEBUG localhost.localdomain --- [tp1886938557-45] o.s.w.s.v.f.FreeMarkerView               : No FreeMarker view found for URL: /dashboard/index/login.ftl
+2018-11-07 16:40:04.970 DEBUG localhost.localdomain --- [tp1886938557-45] o.s.u.f.SpringTemplateLoader             : Looking for FreeMarker template with name [dashboard/index/login.ftl_en_US.html]
+2018-11-07 16:40:04.972 DEBUG localhost.localdomain --- [tp1886938557-45] o.s.u.f.SpringTemplateLoader             : Looking for FreeMarker template with name [dashboard/index/login.ftl_en_US.html]
+2018-11-07 16:40:04.975 DEBUG localhost.localdomain --- [tp1886938557-45] o.s.u.f.SpringTemplateLoader             : Looking for FreeMarker template with name [dashboard/index/login.ftl_en.html]
+2018-11-07 16:40:04.976 DEBUG localhost.localdomain --- [tp1886938557-45] o.s.u.f.SpringTemplateLoader             : Looking for FreeMarker template with name [dashboard/index/login.ftl_en.html]
+2018-11-07 16:40:04.979 DEBUG localhost.localdomain --- [tp1886938557-45] o.s.u.f.SpringTemplateLoader             : Looking for FreeMarker template with name [dashboard/index/login.ftl.html]
+
+#+END_SRC
+
+其中有提示找不到模板文件的错误日志：
+#+BEGIN_SRC xml
+No FreeMarker view found for URL: /dashboard/index/login.ftl
+#+END_SRC
+而文件实际上是 /dashboard/index/login.ftl.html，说明是对后缀的.ftl.html配置没有被spring识别出。
+
+因为freemarker的configuration bean都在web-configuration模块中，而freemarker的templates文件都在web-app模块的src/main/resources/templates目录中，
+通过mvn package命令生成的jar包：web-app.jar解压缩之后，目录结构如下：
+#+BEGIN_SRC
+  created: META-INF/
+ inflated: META-INF/MANIFEST.MF
+  created: BOOT-INF/
+  created: BOOT-INF/classes/
+  created: BOOT-INF/classes/templates/
+  ......
+  ......
+  created: BOOT-INF/classes/templates/dashboard/privilege/roles/
+  created: BOOT-INF/classes/templates/dashboard/common/
+  created: BOOT-INF/classes/templates/dashboard/index/
+  created: BOOT-INF/classes/templates/error/
+  ......
+  ......
+  extracted: BOOT-INF/lib/core-privielge-rbac-usergroups-6.1.0.0-SNAPSHOT.jar
+  extracted: BOOT-INF/lib/web-configuration-6.1.0.0-SNAPSHOT.jar
+  ......
+  ......
+#+END_SRC
+
+在configuration bean中的路经配置有：src/main/resources目录，而这个目录在于web-app工程中不存在，所以在web-configuration模块中将freemakre的目录位置调整为：
+#+BEGIN_SRC
+    factory.setTemplateLoaderPaths("classpath:templates");
+#+END_SRC
+然后启动工程，再访问登陆地址，仍然出现404错误，后台有如下的报错信息：
+#+BEGIN_SRC xml
+2018-11-07 16:47:51.634 DEBUG localhost.localdomain --- [           main] o.s.u.f.FreeMarkerConfigurationFactory   : Cannot resolve template loader path [classpath:templates] to [java.io.File]: using SpringTemplateLoader as fallback
+java.io.FileNotFoundException: class path resource [templates] cannot be resolved to absolute file path because it does not reside in the file system: jar:file:/home/michael/projects/java/shanghangliangfan/fresh-usercenter-server/web/web-app/target/web-app-6.1.0.0-SNAPSHOT.jar!/BOOT-INF/classes!/templates
+        at org.springframework.util.ResourceUtils.getFile(ResourceUtils.java:218)
+        at org.springframework.core.io.AbstractFileResolvingResource.getFile(AbstractFileResolvingResource.java:52)
+        at org.springframework.ui.freemarker.FreeMarkerConfigurationFactory.getTemplateLoaderForPath(FreeMarkerConfigurationFactory.java:338)
+        at org.springframework.ui.freemarker.FreeMarkerConfigurationFactory.createConfiguration(FreeMarkerConfigurationFactory.java:290)
+        at com.shihang.usercenter.configuration.ServerConfiguration.freemarkerConfig(ServerConfiguration.java:125)
+        at com.shihang.usercenter.configuration.ServerConfiguration$$EnhancerBySpringCGLIB$$89839f06.CGLIB$freemarkerConfig$3(<generated>)
+        at com.shihang.usercenter.configuration.ServerConfiguration$$EnhancerBySpringCGLIB$$89839f06$$FastClassBySpringCGLIB$$79e64f66.invoke(<generated>)
+        at org.springframework.cglib.proxy.MethodProxy.invokeSuper(MethodProxy.java:228)
+        at org.springframework.context.annotation.ConfigurationClassEnhancer$BeanMethodInterceptor.intercept(ConfigurationClassEnhancer.java:358)
+        at com.shihang.usercenter.configuration.ServerConfiguration$$EnhancerBySpringCGLIB$$89839f06.freemarkerConfig(<generated>)
+        at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+        at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+        at java.lang.reflect.Method.invoke(Method.java:498)
+        at org.springframework.beans.factory.support.SimpleInstantiationStrategy.instantiate(SimpleInstantiationStrategy.java:162)
+        at org.springframework.beans.factory.support.ConstructorResolver.instantiateUsingFactoryMethod(ConstructorResolver.java:588)
+        at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.instantiateUsingFactoryMethod(AbstractAutowireCapableBeanFactory.java:1173)
+        at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBeanInstance(AbstractAutowireCapableBeanFactory.java:1067)
+        at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.doCreateBean(AbstractAutowireCapableBeanFactory.java:513)
+        at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBean(AbstractAutowireCapableBeanFactory.java:483)
+        at org.springframework.beans.factory.support.AbstractBeanFactory$1.getObject(AbstractBeanFactory.java:306)
+        at org.springframework.beans.factory.support.DefaultSingletonBeanRegistry.getSingleton(DefaultSingletonBeanRegistry.java:230)
+        at org.springframework.beans.factory.support.AbstractBeanFactory.doGetBean(AbstractBeanFactory.java:302)
+        at org.springframework.beans.factory.support.AbstractBeanFactory.getBean(AbstractBeanFactory.java:197)
+        at org.springframework.beans.factory.support.DefaultListableBeanFactory.preInstantiateSingletons(DefaultListableBeanFactory.java:761)
+        at org.springframework.context.support.AbstractApplicationContext.finishBeanFactoryInitialization(AbstractApplicationContext.java:866)
+        at org.springframework.context.support.AbstractApplicationContext.refresh(AbstractApplicationContext.java:542)
+        at org.springframework.boot.context.embedded.EmbeddedWebApplicationContext.refresh(EmbeddedWebApplicationContext.java:122)
+        at org.springframework.boot.SpringApplication.refresh(SpringApplication.java:737)
+        at org.springframework.boot.SpringApplication.refreshContext(SpringApplication.java:370)
+        at org.springframework.boot.SpringApplication.run(SpringApplication.java:314)
+        at org.springframework.boot.SpringApplication.run(SpringApplication.java:1162)
+        at org.springframework.boot.SpringApplication.run(SpringApplication.java:1151)
+        at com.shihang.usercenter.web.UserCenterWebApplication.main(UserCenterWebApplication.java:10)
+        at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+        at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+        at java.lang.reflect.Method.invoke(Method.java:498)
+        at org.springframework.boot.loader.MainMethodRunner.run(MainMethodRunner.java:48)
+        at org.springframework.boot.loader.Launcher.launch(Launcher.java:87)
+        at org.springframework.boot.loader.Launcher.launch(Launcher.java:50)
+        at org.springframework.boot.loader.JarLauncher.main(JarLauncher.java:51)
+2018-11-07 16:47:51.643  INFO localhost.localdomain --- [           main] o.s.u.f.SpringTemplateLoader             : SpringTemplateLoader for FreeMarker: using resource loader [org.springframework.core.io.DefaultResourceLoader@ca546a1] and template loader path [classpath:templates/]
+#+END_SRC
+
+根据如下的错误信息提示：
+#+BEGIN_SRC xml
+java.io.FileNotFoundException: class path resource [templates] cannot be resolved to absolute file path because it does not reside in the file system: jar:file:/home/michael/projects/java/shanghangliangfan/fresh-usercenter-server/web/web-app/target/web-app-6.1.0.0-SNAPSHOT.jar!/BOOT-INF/classes!/templates
+#+END_SRC
+是spring找不到template目录，而在生成的jar包，确实存在有templates目录，那为何会找不到？
+再根据如下的错误日志：
+#+BEGIN_SRC xml
+Cannot resolve template loader path [classpath:templates] to [java.io.File]: using SpringTemplateLoader as fallback
+#+END_SRC
+猜测是Spring是利用java.io.File对象来读取templates目录，java.io.File对象只能够读取存在于系统的磁盘中的文件，
+而templates目录是存在于jar包中的，所以spring会有上述的报错信息。
+
+结合网上查找到的一些资料，了解到spring boot也提供了针对freemarker在application.yml中配置项，
+于是尝试在application.yml中增加配置如下：
+#+BEGIN_SRC xml
+   freemarker:
+     suffix: .ftl.html
+     template-loader-path: classpath:/templates/
+#+END_SRC
+并删除关于freemarker的configuration bean的配置。
+
+再启动工程，访问某个接口地址，有如下的报错信息，但是接口不再返回404,而是返回了正常的页面
+#+BEGIN_SRC xml
+2018-11-07 16:58:56.631 DEBUG localhost.localdomain --- [           main] o.s.w.s.v.f.FreeMarkerConfigurer         : Cannot resolve template loader path [classpath:/templates/] to [java.io.File]: using SpringTemplateLoader as fallback
+java.io.FileNotFoundException: class path resource [templates/] cannot be resolved to absolute file path because it does not reside in the file system: jar:file:/home/michael/projects/java/shanghangliangfan/fresh-usercenter-server/web/web-app/target/web-app-6.1.0.0-SNAPSHOT.jar!/BOOT-INF/classes!/templates/
+        at org.springframework.util.ResourceUtils.getFile(ResourceUtils.java:218)
+        at org.springframework.core.io.AbstractFileResolvingResource.getFile(AbstractFileResolvingResource.java:52)
+        at org.springframework.ui.freemarker.FreeMarkerConfigurationFactory.getTemplateLoaderForPath(FreeMarkerConfigurationFactory.java:338)
+        at org.springframework.ui.freemarker.FreeMarkerConfigurationFactory.createConfiguration(FreeMarkerConfigurationFactory.java:290)
+        at org.springframework.web.servlet.view.freemarker.FreeMarkerConfigurer.afterPropertiesSet(FreeMarkerConfigurer.java:116)
+        at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.invokeInitMethods(AbstractAutowireCapableBeanFactory.java:1687)
+        at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.initializeBean(AbstractAutowireCapableBeanFactory.java:1624)
+        at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.doCreateBean(AbstractAutowireCapableBeanFactory.java:555)
+        at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBean(AbstractAutowireCapableBeanFactory.java:483)
+        at org.springframework.beans.factory.support.AbstractBeanFactory$1.getObject(AbstractBeanFactory.java:306)
+        at org.springframework.beans.factory.support.DefaultSingletonBeanRegistry.getSingleton(DefaultSingletonBeanRegistry.java:230)
+        at org.springframework.beans.factory.support.AbstractBeanFactory.doGetBean(AbstractBeanFactory.java:302)
+        at org.springframework.beans.factory.support.AbstractBeanFactory.getBean(AbstractBeanFactory.java:197)
+        at org.springframework.beans.factory.support.DefaultListableBeanFactory.preInstantiateSingletons(DefaultListableBeanFactory.java:761)
+        at org.springframework.context.support.AbstractApplicationContext.finishBeanFactoryInitialization(AbstractApplicationContext.java:866)
+        at org.springframework.context.support.AbstractApplicationContext.refresh(AbstractApplicationContext.java:542)
+        at org.springframework.boot.context.embedded.EmbeddedWebApplicationContext.refresh(EmbeddedWebApplicationContext.java:122)
+        at org.springframework.boot.SpringApplication.refresh(SpringApplication.java:737)
+        at org.springframework.boot.SpringApplication.refreshContext(SpringApplication.java:370)
+        at org.springframework.boot.SpringApplication.run(SpringApplication.java:314)
+        at org.springframework.boot.SpringApplication.run(SpringApplication.java:1162)
+        at org.springframework.boot.SpringApplication.run(SpringApplication.java:1151)
+        at com.shihang.usercenter.web.UserCenterWebApplication.main(UserCenterWebApplication.java:10)
+        at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+        at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+        at java.lang.reflect.Method.invoke(Method.java:498)
+        at org.springframework.boot.loader.MainMethodRunner.run(MainMethodRunner.java:48)
+        at org.springframework.boot.loader.Launcher.launch(Launcher.java:87)
+        at org.springframework.boot.loader.Launcher.launch(Launcher.java:50)
+        at org.springframework.boot.loader.JarLauncher.main(JarLauncher.java:51)
+2018-11-07 16:58:56.641  INFO localhost.localdomain --- [           main] o.s.u.f.SpringTemplateLoader             : SpringTemplateLoader for FreeMarker: using resource loader [org.springframework.boot.context.embedded.AnnotationConfigEmbeddedWebApplicationContext@43301423: startup date [Wed Nov 07 16:58:39 CST 2018]; root of context hierarchy] and template loader path [classpath:/templates/]
+2018-11-07 16:58:56.644  INFO localhost.localdomain --- [           main] o.s.w.s.v.f.FreeMarkerConfigurer         : ClassTemplateLoader for Spring macros added to FreeMarker configuration
+#+END_SRC
+
+根据如上的日志报错和http接口正常的返回行为，猜测是spring会先尝试使用java.io.File对象来读取freemarker的页面，如果报错，
+再尝试使用SpringTemplateLoader对象来读取freemarker页面，这个对象可以从jar包中读取template目录，为了验证这个猜测，
+查看Spring关于freemarker配置的源码，发现有如下的逻辑：
+#+BEGIN_SRC java
+/**
+         * Determine a FreeMarker TemplateLoader for the given path.
+         * <p>Default implementation creates either a FileTemplateLoader or
+         * a SpringTemplateLoader.
+         * @param templateLoaderPath the path to load templates from
+         * @return an appropriate TemplateLoader
+         * @see freemarker.cache.FileTemplateLoader
+         * @see SpringTemplateLoader
+         */
+        protected TemplateLoader getTemplateLoaderForPath(String templateLoaderPath) {
+                if (isPreferFileSystemAccess()) {
+                        // Try to load via the file system, fall back to SpringTemplateLoader
+                        // (for hot detection of template changes, if possible).
+                        try {
+                                Resource path = getResourceLoader().getResource(templateLoaderPath);
+                                File file = path.getFile();  // will fail if not resolvable in the file system
+                                if (logger.isDebugEnabled()) {
+                                        logger.debug(
+                                                        "Template loader path [" + path + "] resolved to file path [" + file.getAbsolutePath() + "]");
+                                }
+                                return new FileTemplateLoader(file);
+                        }
+                        catch (IOException ex) {
+                                if (logger.isDebugEnabled()) {
+                                        logger.debug("Cannot resolve template loader path [" + templateLoaderPath +
+                                                        "] to [java.io.File]: using SpringTemplateLoader as fallback", ex);
+                                }
+                                return new SpringTemplateLoader(getResourceLoader(), templateLoaderPath);
+                        }
+                }
+                else {
+                        // Always load via SpringTemplateLoader (without hot detection of template changes).
+                        logger.debug("File system access not preferred: using SpringTemplateLoader");
+                        return new SpringTemplateLoader(getResourceLoader(), templateLoaderPath);
+                }
+        }
+#+END_SRC
+
+从这段代码可以看出：spring为了实现热加载freemarker的模板的目的，
+使用了多个template loader，先使用ResourcesLoader（该类是基于java.io.File对象构建）加载模板，
+如果出现加载资源出错，则使用SpringTemplateLoader从加载template，所以上面的大段的报错信息其实不是问题的根本
+原因。
+
+根本的原因是：基于configuration bean的方式配置的后缀信息“.ftl.html”没有被spring加载，spring却以它默认的“.ftl”后缀
+读取模板文件，而导致找到模板文件的错误。
+那么问题来了，为什么通过如下的配置：
+#+BEGIN_SRC java
+ @Bean
+  public ViewResolver getViewResolver() {
+    FreeMarkerViewResolver resolver = new FreeMarkerViewResolver();
+    resolver.setCache(true);
+    resolver.setPrefix("");
+    resolver.setSuffix(".ftl.html");
+    resolver.setContentType("text/html; charset=UTF-8");
+    return resolver;
+  }
+#+END_SRC
+没有被spring读取模板文件的时后加载到？
+这个问题，下一篇文章分析。

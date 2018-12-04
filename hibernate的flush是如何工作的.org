@@ -1,0 +1,150 @@
+探索flush() 是如何实现的，在SessionImpl类中有如下方法定义：
+
+#+BEGIN_SRC java
+// SessionImpl.java
+@Override
+public void flush() throws HibernateException {
+     checkOpen();
+     doFlush();
+}
+
+private void doFlush() {
+                checkTransactionNeeded();
+                checkTransactionSynchStatus();
+
+                try {
+                        if ( persistenceContext.getCascadeLevel() > 0 ) {
+                                throw new HibernateException( "Flush during cascade is dangerous" );
+                        }
+
+                        FlushEvent flushEvent = new FlushEvent( this );
+                        for ( FlushEventListener listener : listeners( EventType.FLUSH ) ) {
+                                listener.onFlush( flushEvent );
+                        }
+
+                        delayedAfterCompletion();
+                }
+                catch ( RuntimeException e ) {
+                        throw exceptionConverter.convert( e );
+                }
+        }
+#+END_SRC
+
+flush的主要逻辑组织在:FlushEvent对象和FlushEventListener的onFlush方法中
+而这些逻辑又都是通过接口组织的，不涉及到任何具体实现类，所以
+以后如果要扩展或者更改flush的行为，这里的逻辑不需要任何调整，只需要扩展
+FlushEventListenr的实现类即可。
+
+这里有一些flush的前后逻辑，主要和事务相关，这里不深入追究，因为和本文主题相关性不强。
+
+基于FlushEveltListener的onFlush追踪出有如下的代码执行路经(注：在onFlush方法中有两个路经，分别是entity和collection，这里先追踪entity的执行路经)：
+
+#+BEGIN_SRC java
+FlushEventListener.onFlush(FlushEvent) -> FlushEntityEventListener.onFlushEntity(FlushEntityEvent)
+#+END_SRC
+
+我们看下onFlushEntity()是如何定义的:
+#+BEGIN_SRC java
+/**
+         * Flushes a single entity's state to the database, by scheduling
+         * an update action, if necessary
+         */
+        public void onFlushEntity(FlushEntityEvent event) throws HibernateException {
+                final Object entity = event.getEntity();
+                final EntityEntry entry = event.getEntityEntry();
+                final EventSource session = event.getSession();
+                final EntityPersister persister = entry.getPersister();
+                final Status status = entry.getStatus();
+                final Type[] types = persister.getPropertyTypes();
+
+                final boolean mightBeDirty = entry.requiresDirtyCheck( entity );
+
+                final Object[] values = getValues( entity, entry, mightBeDirty, session );
+
+                event.setPropertyValues( values );
+
+                //TODO: avoid this for non-new instances where mightBeDirty==false
+                boolean substitute = wrapCollections( session, persister, types, values );
+
+                if ( isUpdateNecessary( event, mightBeDirty ) ) {
+                        substitute = scheduleUpdate( event ) || substitute;
+                }
+
+                if ( status != Status.DELETED ) {
+                        // now update the object .. has to be outside the main if block above (because of collections)
+                        if ( substitute ) {
+                                persister.setPropertyValues( entity, values );
+                        }
+
+                        // Search for collections by reachability, updating their role.
+                        // We don't want to touch collections reachable from a deleted object
+                        if ( persister.hasCollections() ) {
+                                new FlushVisitor( session, entity ).processEntityPropertyValues( values, types );
+                        }
+                }
+
+        }
+#+END_SRC
+
+我们可以看出先对entity进行dirty check检查（dity check的过程是怎样的，我在另外一篇文章里分析），
+如果是dirty状态，则将当前的entity在放入执行计划当中，那么hibernate是如果定义执行计划的？
+我们来看下scheduleUpdate是如何定义的,我这里忽略了一些不相关的代码，只保留目前我认为和当前主题相关的逻辑
+#+BEGIN_SRC java
+private boolean scheduleUpdate(final FlushEntityEvent event) {
+                ........
+                ........
+                ........
+                // schedule the update
+                // note that we intentionally do _not_ pass in currentPersistentState!
+                session.getActionQueue().addAction(
+                                new EntityUpdateAction(
+                                                entry.getId(),
+                                                values,
+                                                dirtyProperties,
+                                                event.hasDirtyCollection(),
+                                                ( status == Status.DELETED && !entry.isModifiableEntity() ?
+                                                                persister.getPropertyValues( entity ) :
+                                                                entry.getLoadedState() ),
+                                                entry.getVersion(),
+                                                nextVersion,
+                                                entity,
+                                                entry.getRowId(),
+                                                persister,
+                                                session
+                                )
+                );
+
+                return intercepted;
+        }
+#+END_SRC
+从session.getActionQueue()看出session对象是通过队列来存储需要updates的实体，
+session范围内需要被写入到db的对象都被放入到队列中，Hiberante对所有需要写入db的操作定义了EntityAction抽象，归纳了如下的操作类型：
+#+BEGIN_SRC java
+EntityDeleteAction
+EntityUpdateAction
+EntityInsertAction
+EntityRemovalAction
+OrphanRemovalAction
+EntityIdentifyInsertAction
+#+END_SRC
+
+接着看ActionQueue对象中的如下的属性定义：
+#+BEGIN_SRC java
+        private ExecutableList<AbstractEntityInsertAction> insertions;
+        private ExecutableList<EntityDeleteAction> deletions;
+        private ExecutableList<EntityUpdateAction> updates;
+#+END_SRC
+
+
+所以这里应该可以看出在一个事务中，hibernate会把对象存储到ExecutableList中,
+然后在事务提交前，或者session结束前一起批量执行。
+
+至此，我们可以看出flush动作是把事务中的这些需要写入db的操作全部放入了session范围的队列中，并没有真正执行同步db的操作。
+
+因此里有如下几个疑问：
++ 1、队列中的操作是何时同步到db中？
++ 2、session的flush是如何在事务结束前或则session结束前触发的？
++ 2、有一个关键点，就是hibernate是如何做dirty check的？
++ 3、这里将当前entity需要写入db的动作封装成为一个action，并缓存到一个队列中，设置这个队列有什么目的是什么？起到了什么作用？
+
+如上问题明天继续分析。

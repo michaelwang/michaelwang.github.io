@@ -1,0 +1,164 @@
+* 概述
+
+项目是通过Jenkins打包发布测试、正式环境，Jenkins是部署在物理机上，
+通过如下方式启动:
+#+BEGIN_SRC
+/etc/init.d/jenkins start
+#+END_SRC
+整个流程是利用jenkins的pipeline机制进行构建和管理，先利用maven打成war包，
+然后通过bash shell的scp命令将生成的war包部署到发包机上，接着通过
+shell命令远程执行发包机上的服务部署脚本，服务部署脚本是通过shell
+来执行远程服务器上的关闭、部署、启动脚本。
+整个过程在非容器运行的Jenkins上执行没有任何问题，
+然而在通过docker的方式启动Jenkins运行后，
+就会导致部署的服务中的下载图片的接口，
+当下载的文件名中含有中文字符时，就出现"File Not Found"的错误。
+这个问题目前没有分析出具体原因，先记录下来做一个备忘。
+下面具体将问题发生时的场景做下描述：
+
+* 问题发生的场景描述
+
+项目是通过jenkins的pipeline的机制构建和发布的，打包的过程如下：
+#+BEGIN_SRC xml
+node {
+   def mvnHome
+   stage('Prepare-And-Checking') {
+         mvnHome = tool 'M3'
+         sh "cd ../${JOB_NAME}@script && '${mvnHome}/bin/mvn' -Dmaven.test.failure.ignore compile"
+   }
+
+   stage('Package') {
+         sh "cd ../${JOB_NAME}@script && '${mvnHome}/bin/mvn' -Dproject.build.sourceEncoding=UTF-8 -Dmaven.test.skip=true clean package -P production"
+   }
+}
+#+END_SRC
+
+通过如上的步骤进行打包，然后通过如下的步骤将打好的war包部署到发包机中
+#+BEGIN_SRC
+  stage('Deploy-War-To-Delilvery-Machine') {
+        sh "scp -o StrictHostKeyChecking=no -P 22 ../${JOB_NAME}@script/project_name/target/project_name.war root@sy-suz-test-packer.suiyi.com.cn:/data/deploy/product/"
+   }
+#+END_SRC
+
+再通过如下的步骤，执行打包机器上的远程服务的部署和启动脚本
+#+BEGIN_SRC xml
+   stage('deploy-to-server') {
+             sh "ssh -tt -o StrictHostKeyChecking=no  root@delivery-machine-host-name.com '/opt/product-server-scripts_/product_deploy_and_restart.sh'"
+   }
+#+END_SRC
+
+其中product_deploy_and_restart.sh脚本依次做如下的事情
++ 将新的war包部署到远程服务器的部署目录中
++ 执行远程服务器上的shutdown.sh脚本，关闭服务
++ 执行远程服务器上的deploy.sh 脚本，将原war包备份到到单独的部署目录下，将新的war包部署到发布目录中
++ 执行远程服务器上的startup.sh脚本，启动服务
+
+#+BEGIN_SRC
+product_deploy_and_restart.sh
+#+END_SRC
+的脚本如下：
+
+#+BEGIN_SRC xml
+#!/bin/sh
+
+server_ip=my_server_ip
+server_port=61022
+ssh_user=one_ssh_user
+server_app_dir=/data/app/project
+scp -P $server_port /data/deploy/product/project_name.war $ssh_user@$server_ip:/home/share/project_name/deploy/
+ssh -t -p $server_port $ssh_user@$server_ip "$server_app_dir/bin/shutdown.sh"
+ssh -t -p $server_port $ssh_user@$server_ip "$server_app_dir/bin/deploy.sh"
+ssh -t -p $server_port $ssh_user@$server_ip "$server_app_dir/bin/startup.sh"
+#+END_SRC
+
+远程服务器上的shutdown.sh脚本如下：
+
+#+BEGIN_SRC
+#! /bin/sh
+ps -eaf | grep project_name | grep -v grep | awk '{print $2}' | xargs sudo  kill -9
+#+END_SRC
+
+deploy.sh脚本如下：
+#+BEGIN_SRC
+#! /bin/sh
+
+base_dir=/data/app/project_name
+storage_dir=/home/share
+#备份war包
+if [ -f $base_dir/lib/project_name.war ]
+then
+    filename=project_name-backup`date +%Y-%m-%d-%H-%M-%S`.war
+    cp $base_dir/lib/project_name.war $storage_dir/backup/app/project_name/$filename
+fi
+
+war_base_dir=$storage_dir/deploy
+cp $war_base_dir/project_name/project_name.war $base_dir/lib/
+#+END_SRC
+
+startup.sh的脚本如下：
+#+BEGIN_SRC xml
+#!/bin/sh
+
+base_dir=/data/app/project_name
+
+cd $base_dir/bin
+sudo su -s /bin/bash -c "nohup java -jar -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Dspring.config.location=file:/data/app/project_name/conf/application.yml /data/app/project_name/lib/project_name.war &" tomcat
+if [ -f $base_dir/logs/project_name.log ]
+then
+    timeout 60s tail -f $base_dir/logs/project_name.log
+fi
+exit 0
+#+END_SRC
+
+如上的过程在没有使用容器jenkins中触发构建没有任何问题，然而把jenkins在容器中启动后，
+部署项目后，当访问带有中文字符的图片文件下载接口地址的时后
+#+BEGIN_SRC
+http://hostname/file?name=1488347167中文字符.png
+#+END_SRC
+就出现了如下的错误：
+#+BEGIN_SRC java
+com.companyname.kernel.service.storage.StorageException: 文件不存在 1488347167中文字符.png
+        at com.companyname.kernel.service.storage.FileSystemStorage.loadAsResource(FileSystemStorage.java:115)
+        at com.shlf.biz.api.FileController.view(FileController.java:78)
+        at com.shlf.biz.api.FileController$$FastClassBySpringCGLIB$$e0f8d0b9.invoke(<generated>)
+        at org.springframework.cglib.proxy.MethodProxy.invoke(MethodProxy.java:204)
+        at org.springframework.aop.framework.CglibAopProxy$CglibMethodInvocation.invokeJoinpoint(CglibAopProxy.java:721)
+#+END_SRC
+
+因为这是在切换jenkins后出现的问题，所以怀疑有如下的可能
++ 是否是新旧Jenkins打的war包前后有差异？
++ war包在传输过程中是否有损失？
++ 执行的远程shell命令是否有问题？
+
+于是对上述的每一个可疑点进行排查，先检查war包是否有问题，在服务器上手动执行服务重启的命令：
+#+BEGIN_SRC
+./shutdown.sh
+./startup.sh
+#+END_SRC
+然后访问地址
+#+BEGIN_SRC
+http://hostname/file?name=1488347167中文字符.png
+#+END_SRC
+图片返回正常，说明war包前后没有差异，传输的过程也问题。
+那么再验证是否是远程shell命令执行有问题，在上述流程中有两次远程shell命令调用，分别是在jenkins的pipeline中
+和发包机上。先验证发包机上的
+#+BEGIN_SRC
+product_deploy_and_restart.sh
+#+END_SRC
+脚本，手动执行该脚本，再访问图片地址接口，图片返回正常，
+说明发包机的shell脚本没有问题，然后再到jenkins的docker容器中执行pipeline中的远程shell命令：
+#+BEGIN_SRC
+ssh -tt -o StrictHostKeyChecking=no  root@delivery-machine-host-name.com '/opt/product-server-scripts_/product_deploy_and_restart.sh'
+#+END_SRC
+访问图片接口，此时重现了上述的不能找到图片的错误
+#+BEGIN_SRC xml
+com.companyname.kernel.service.storage.StorageException: 文件不存在 1488347167中文字符.png
+        at com.companyname.kernel.service.storage.FileSystemStorage.loadAsResource(FileSystemStorage.java:115)
+        at com.shlf.biz.api.FileController.view(FileController.java:78)
+        at com.shlf.biz.api.FileController$$FastClassBySpringCGLIB$$e0f8d0b9.invoke(<generated>)
+        at org.springframework.cglib.proxy.MethodProxy.invoke(MethodProxy.java:204)
+        at org.springframework.aop.framework.CglibAopProxy$CglibMethodInvocation.invokeJoinpoint(CglibAopProxy.java:721)
+#+END_SRC
+
+因此怀疑是由于两次远程shell执行导致的问题，但是相同的部署发布流程，在非容器下运行的jenkins就不存在的，所以又不像是两次的远程shell调用导致。
+这个问题目前还没有确认具体原因，先记录下，后续调研。

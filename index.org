@@ -1,0 +1,36 @@
+* 欢迎来到王震华的博客
+* 联系方式
+
+#+BEGIN_SRC
+ weiyan.2017@yandex.com
+#+END_SRC
+
+* 文章列表
+
+** [[http://wangzhenhua.rocks/open-jdk.html][Open JDK编译后出现的中文乱码问题及解决过程]]
+** [[http://wangzhenhua.rocks/openjdk-java-nio-file-InvalidPathException.html][Open JDK中文件上传异常java-nio-file-InvalidPathException解决过程]]
+** [[http://wangzhenhua.rocks/mysql8-java-timezone.html][使用MySQL 8遇到时区问题及解决过程]]
+** [[http://wangzhenhua.rocks/mycat-jpa-spring-transaction.html][MyCAT-Spring-Boot-JPA中间件使用过程的问题]]
+** [[http://wangzhenhua.rocks/Spring-Data-Read-Query-Cancel-Transaction.html][如何调整Spring-Data读请求不开启事务]]
+** [[http://wangzhenhua.rocks/spring-data-read-data-with-transaction.html][Spring-Data查询事务的分析一]]
+** [[http://wangzhenhua.rocks/spring-data-read-data-with-transaction-optimization.html][Spring-Data查询事务的分析二]]
+** [[http://wangzhenhua.rocks/dotnet-call-java-http-timezone-mistake.html][对时区理解的偏差导致的一个生产环境的故障]]
+** [[http://wangzhenhua.rocks/spring-data-query-transaction-analysis.html][Spring-Data查询事务的分析三]]
+** [[http://wangzhenhua.rocks/data-time-cros-language-pattern-uniform.html][日期时间数据类型的统一方案的制定分析过程]]
+** [[http://wangzhenhua.rocks/jenkins-packing-chinese-charater-messy-code.html][通过Jenkins打包发布正式环境后出现含有中文字符的文件不能被下载的问题]]
+** [[http://wangzhenhua.rocks/multi-maven-module-package-dependency-not-found.html][多Maven-Module工程打包时碰到的一个问题]]
+** [[http://wangzhenhua.rocks/when-hibernate-do-flush.html][hibernate何时做flush]]
+** [[http://wangzhenhua.rocks/how-hibernate-flush-works.html][hibernate的flush是如何工作的]]
+** [[http://wangzhenhua.rocks/ddd-service-object.html][对领域驱动设计中Service对象的重新理解]]
+** [[http://wangzhenhua.rocks/spring-boot-multi-maven-module.html][将基于Spring-Boot开发工程调整成多Maven-Module的实战总结]]
+** [[http://wangzhenhua.rocks/spring-boot-freemarker-load-template-error.html][Spring-Boot加载jar包中freemarker报错的问题和解决过程]]
+** [[http://wangzhenhua.rocks/spring-boot-freemarker-not-load-reseaon.html][Spring-Boot关于freemarker的不能正常加载过程分析]]
+** [[http://wangzhenhua.rocks/spring-mvc-view-design-and-practice-design-pattern-behavior.html][SpringMVC的View层设计思路分析和应用分析]]
+** [[http://wangzhenhua.rocks/press-test-hard-driver.html][压力测试磁盘压力测试探索]]
+** [[http://wangzhenhua.rocks/mysql-sysbench-practice-1.html][MySQL压力测试实践一.html]]
+** [[http://wangzhenhua.rocks/mysql-data-change-datadier-practice.html][MySQL5的磁盘目录调整实践]]
+** [[http://wangzhenhua.rocks/jforum3-dev-log-1.html][jforum3开发日志一]]
+** [[http://wangzhenhua.rocks/jforum3-dev-log-2.html][jforum3开发日志二]]
+** [[http://wangzhenhua.rocks/spring-boot-async-thread-pool-error.html][SpringBoot-Async-线程池爆满问题解决过程]]
+** [[http://wangzhenhua.rocks/jforum-dev-log-3-messy-chineses-character.html][jforum3开发日志三之乱码问题解决]]
+** [[http://wangzhenhua.rocks/maven-create-plugin.html][如何创建maven插件]]

@@ -1,0 +1,58 @@
+* 概述
+本文主要介绍如何调整MySQL默认文件目录的实践过程
+调整的具体过程主要参考： [[https://naveensnayak.com/2016/01/14/changing-mysql-data-directory-centos-7/][mysql-datadir-change]]
+
+* 具体操作步骤
+** 关闭服务
+
+#+BEGIN_SRC
+systemctl stop mysqld.service
+mkdir /var/data/mysql
+#+END_SRC
+
+** 调整文件的目录位置
+在 /etc/my.cnf中，将数据目录指向到新的目录位置,按照如下方式调整，本文假设新的目录是 /var/data/mysql
+
+#+BEGIN_SRC
+[client]
+port=3306
+socket=/var/data/mysql/mysql.sock
+[mysqld]
+datadir=/var/data/mysql
+socket=/var/data/mysql/mysql.sock
+#+END_SRC
+
+** 拷贝所有的mysql文件到新目录中去
+按照如下的方式进行拷贝:
+#+BEGIN_SRC
+cp -r /var/lib/mysql/* /var/data/mysql
+#+END_SRC
+
+** 设置新目录的权限
+
+按照如下的方式设置目录权限：
+
+#+BEGIN_SRC
+chown -R mysql /var/data/mysql;
+chgrp -R mysql /var/data/mysql;
+chmod -R g+rw /var/data/mysql;
+#+END_SRC
+
+** 设置SELINUX 允许mysql使用新的目录
+
+# add context and make it permanent
+#+BEGIN_SRC
+semanage fcontext -a -s system_u -t mysqld_db_t "/var/data/mysql(/.*)?"
+restorecon -Rv /var/data/mysql
+#+END_SRC
+
+** 重新启动MySQL
+
+#+BEGIN_SRC
+systemctl start mysqld.service
+#+END_SRC
+
+** 确认调整是否生效
+新建一个数据库，并在新目录/var/data/mysql中检查是否存在新建的数据库文件
+
+PS

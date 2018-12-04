@@ -1,0 +1,32 @@
+最近将开发的项目从单一的Maven-Module工程重构成为多Maven-Module的工程，
+在处理Module之间的依赖关系的时后，碰到了一个问题：
+有一个名为api-privilege-rbac-apps的module，它不依赖任何其他module，在这个module的根目录下执行:
+#+BEGIN_SRC xml
+mvn clean install
+#+END_SRC
+项目可以顺利通过编译和本地安装，然而在处理另外一个Module：api-privilege-rbac-resources时，
+在执行上述的打包命令时，有如下错误信息：
+#+BEGIN_SRC xml
+[ERROR] Failed to execute goal on project api-privilege-rbac-resources:
+Could not resolve dependencies for project com.shihang.usercenter:api-privilege-rbac-resources:jar:6.1.0.0-SNAPSHOT:
+Failed to collect dependencies at com.shihang.usercenter:api-privilege-rbac-apps:jar:6.1.0.0-SNAPSHOT:
+Failed to read artifact descriptor for com.shihang.usercenter:api-privilege-rbac-apps:jar:6.1.0.0-SNAPSHOT:
+Could not find artifact com.shihang.usercenter:usercenter-starter:pom:6.1.0.0-SNAPSHOT in nexus
+(http://machine-name:8081/repository/shihang-public/) -> [Help 1]
+[ERROR]
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR]
+#+END_SRC
+这是找不到parent pom的报错信息，但是相同的命令在api-privielge-rbac-apps模块中没有遇到，
+二者的差别是api-privielge-rbac-resources依赖了api-privielge-rbac-apps模块，
+而api-privielge-rbac-apps没有依赖任何其他模块，于是猜测api-privielge-rbac-resources模块打包的时后，
+会先找parent pom：com.shihang.usercenter:usercenter-starter:pom:6.1.0.0-SNAPSHOT，
+然后再去寻找api-privielge-rabc-apps依赖，当在本地没有发现这个parent pom的时后，
+会到nexus中查找，而本地没有执行过parent pom的安装，所以需要到parent pom目录下
+执行如下命令，打包和部署，因为其他module还在重构中，不能进行全量的编译打包，需要排除掉子module再执行：
+#+BEGIN_SRC xml
+mvn -N package install // -N 标识不构建子module
+#+END_SRC
+
+执行完上述的命令后，再到模块api-privilege-rbac-resources下执行打包安装，顺利通过。

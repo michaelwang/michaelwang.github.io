@@ -1,0 +1,13 @@
+基于上一篇[[http://wangzhenhua.rocks/spring-data-read-data-with-transaction-optimization.html][Spring-Data查询事务的分析二]] 的分析，我们知道Spring 通过read only状态的事务可以优化Hibernate处理
+dirty checking的效率，所以基于[[http://wangzhenhua.rocks/Spring-Data-Read-Query-Cancel-Transaction.html][如何调整Spring-Data读请求不开启事务]] 提出的问题：
+“为什么Spring Data默认对所有的读请求加上事务？带上事务的查询请求会比不带事务的性能更好吗？” 好像是有了答案。
+下面会把工程从spring framework 4.3升级到5.1 进行测试。
+
+基于这个问题的解决过程，我们反思如下的问题：
+- hibernate为什么需要做dirty checking ?
+- hibernate在什么时后需要做dirty checking？
+- hibernate是如何做dirty checking的？
+- Spring将事务的链接状态设置为read only的状态，是如何传递到hibernate中的，以及hibernate是如何支持不同链接属性的对象管理？
+
+
+上面的每一个问题的探索都会涉及到内部原理的实现机制，我们在后面的文章中继续分析，争取在后面的4天内都分析结束。

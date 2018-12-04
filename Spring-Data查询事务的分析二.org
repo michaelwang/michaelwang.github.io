@@ -1,0 +1,15 @@
+昨天的分析[[http://wangzhenhua.rocks/spring-data-read-data-with-transaction.html][Spring-Data查询事务的分析一]] 没有结果，今天对文章 [[https://vladmihalcea.com/spring-read-only-transaction-hibernate-optimization/][ Spring read-only transaction Hibernate optimization]] 再次
+阅读好几遍，发现昨天的对文章的理解是不全面，作者完整的意思是：
+#+BEGIN_SRC
+JPA/Hibernate默认是以read write状态读取entity，并会将entity保存在 persistenceContext中，
+当有Update运算时，JPA/Hibernate会基于dirty checking的机制从persistenceContext中获取实体对象
+和刚从数据库加载出来的对象的快照进行比较，再决定是否需要同步写入到DB，
+作者的意思是如果我们确认当前的场景只是读取数据，后续不会再有更新的操作，
+那么就不需要再将实体保存到persistenceContext中，这样会提高JPA/Hibernate 处理dirty checking的效率，
+因为排除了那些不需要跟踪的对象。
+#+END_SRC
+
+如上是作者的优化思路，并将该优化形成了PR,提交到Spring社区并被接受，该特性会在Spring framework 5.1版本中发布，
+而昨天的验证是在使用Spring framework 4.3.7 ，所以验证结果必然是不通过的。
+
+PS 对英文文档的理解还需要继续提升。

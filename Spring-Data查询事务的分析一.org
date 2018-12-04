@@ -1,0 +1,47 @@
+基于文章[[http://wangzhenhua.rocks/Spring-Data-Read-Query-Cancel-Transaction.html][如何调整Spring-Data读请求不开启事务]] 中的思考问题：为什么Spring Data默认对所有的读请求加上事务？带上事务的查询请求会比不带事务的性能更好吗？
+
+基于文章[[https://vladmihalcea.com/spring-read-only-transaction-hibernate-optimization/][ Spring read-only transaction Hibernate optimization]] 的说法：
+
+#+BEGIN_SRC
+Therefore, upon loading an entity, the detached state is stored by the Hibernate Session unless the entity is loaded in read-only mode.
+#+END_SRC
+
+如果是基于readOnly状态的事务进行查询，查询出来的对象不会保存在Hibernate的Session中，
+否则会保存在hibernate的session中。 为了验证这个说法，添加如下代码获取PersistenceContext
+
+#+BEGIN_SRC java
+  private org.hibernate.engine.spi.PersistenceContext getHibernatePersistenceContext() {
+    SessionImpl session = entityManager.unwrap(SessionImpl.class);
+    return session.getPersistenceContext();
+  }
+#+END_SRC
+
+并调整findBy方法：
+#+BEGIN_SRC java
+public Role findBy(long id) {
+    Role role = roleRepository.findOne(id);
+    entityManager.contains(role);
+    Object[] loadedState = getHibernatePersistenceContext().getEntry(role).getLoadedState();
+    return role;
+  }
+#+END_SRC
+
+单步调试程序,发现entityManager.contains(role); 返回的是true， 可是loadedState对象不为空，预期应该返回null,
+因为根据  [[https://vladmihalcea.com/spring-read-only-transaction-hibernate-optimization/][Spring read-only transaction Hibernate optimization]] 的说明，在readOnly状态下 loadedstate因该为null
+
+尝试将findBy方法调整成通过entityManager查询，如下：
+#+BEGIN_SRC java
+
+ @Transactional(readOnly = true)
+  public Role findBy(long id) {
+    Role role = entityManager.find(Role.class,id);
+    // Role role = roleRepository.findOne(id);
+    entityManager.contains(role);
+    Object[] loadedState = getHibernatePersistenceContext().getEntry(role).getLoadedState();
+    return role;
+  }
+
+#+END_SRC
+调试后发现和上述的结果一样，loadedstate 不为空。
+
+并没有分析出很明确的结果，明天继续分析。

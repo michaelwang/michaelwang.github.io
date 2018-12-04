@@ -1,0 +1,47 @@
+问题是这样的：
+一个DotNet的服务通过Http调用Java服务，传递了如下参数：
+#+BEGIN_SRC
+{"CouponBatchId":200014137,"CustomerId":2472640,"OrderId":0,
+"BeginTime":"2018-10-24T16:59:42.846321+08:00","EndTime":"2018-10-28T23:59:59+08:00",
+"CreatedOnUtc":"2018-10-24T16:59:42.846321+08:00","UpdatedOnUtc":"2018-10-24T16:59:42.846321+08:00",
+"IsEnable":true,"IsUsed":false,"IsActivate":true,"CanUseMoney":5.00,"LimitMinMoney":29.00,"Discount":0.0,
+"UseTime":null,"RealUseMoney":null,"Description":null,"LimitType":1,"UseType":1,"GetType":103,
+"CouponNo":"74AA6684-E761-4437-8941-AE9C02F0D69D","CouponPassword":"8B0F-C19C-4FF9","OriginOrderID":0,
+"UseOrderType":null,"GetOrderType":null,"WebPic":"0","WorkStationPic":"0","PhonePic":"0","IsRead":false,"CreaterId":0,"Id":null}
+#+END_SRC
+
+其中有一个关于时间的参数：
+#+BEGIN_SRC java
+BeginTime":"2018-10-24T16:59:42.846321+08:00 "
+#+END_SRC
+Java业务代码中的处理方式是根据时间格式中指定的+8时区，将最终时间计算成
+#+BEGIN_SRC
+2018-10-24 24:59:42
+#+END_SRC
+
+但是实际上这导致了线上的优惠券实际生效的时间比预期的时间晚了8个小时，
+也就是说从业务角度来讲期望的生效的时间是
+#+BEGIN_SRC java
+2018-10-24 16:59:42
+#+END_SRC
+
+这个问题一开始认为Java这边的处理是正确的方式，因为把+08:00之前的时间理解成为标准时间，然后基于标准时间来执行+8运算，
+所以从这个角度理解，希望调用方将当前时间减去8小时后的时间再传入，也就是传入
+#+BEGIN_SRC
+BeginTime":"2018-10-24T 08:59:42.846321+08:00"
+#+END_SRC
+
+
+在接着从公司跨语言统一建设的角度考虑解决方案的时后，发现对时区的知识理解不对，
+中国当前时区是用CST来表示的，从维基百科中找到CST的定义如下：
+#+BEGIN_SRC
+CST or Cst may refer to:
+    Central Standard Time, North America's Central Time Zone: UTC -0600
+    China Standard Time: UTC +0800
+    Cuba Standard Time: UTC -0400
+#+END_SRC
+就是说CST可以表示北美中部时间、中国标准时间、古巴标准时间，通过在日期时间后追加 +0800，-0400等的格式体现不同地区的时间
+也就是说DotNet传入Java服务接口的时间参数：BeginTime":"2018-10-24T16:59:42.846321+08:00 "
+是基于CST时区的格式组织的时间数据，是正确的，其中+08:00表示时区，不应该参与时间的计算。
+
+今天的这个问题纠正了自己对时区概念的理解。

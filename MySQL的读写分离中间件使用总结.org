@@ -1,0 +1,125 @@
+* 使用到的中间件清单
+** MyCat
+*** 关于mysql useLocalSessionState的默认含义
+[[https://dev.mysql.com/doc/connector-j/8.0/en/connector-j-reference-configuration-properties.html][MySQL Configuration Properties]]
+#+BEGIN_SRC
+Should the driver refer to the internal values of autocommit and transaction
+isolation that are set by Connection.setAutoCommit() and Connection.setTransactionIsolation()
+and transaction state as maintained by the protocol, rather than querying the database or blindly
+sending commands to the database for commit() or rollback() method calls?
+#+END_SRC
+判断需要根据协议来获取Connection的autoCommit、trasactionIsolation、transaction state的状态，
+还是发送查询请求commit()、rollback()到数据库进行查询？
+
+再结合mysql-java-connector的源码ConnectionImpl.java来验证
+#+BEGIN_SRC java
+/**
+     * Tests to see if the connection is in Read Only Mode. Note that prior to 5.6,
+     * we cannot really put the database in read only mode, but we pretend we can by
+     * returning the value of the readOnly flag
+     *
+     * @param useSessionStatus
+     *            in some cases, for example when restoring connection with autoReconnect=true,
+     *            we can rely only on saved readOnly state, so use useSessionStatus=false in that case
+     *
+     * @return true if the connection is read only
+     * @exception SQLException
+     *                if a database access error occurs
+     */
+    public boolean isReadOnly(boolean useSessionStatus) throws SQLException {
+        if (useSessionStatus && !this.isClosed && versionMeetsMinimum(5, 6, 5) && !getUseLocalSessionState() && getReadOnlyPropagatesToServer()) {
+            java.sql.Statement stmt = null;
+            java.sql.ResultSet rs = null;
+
+            try {
+                try {
+                    stmt = getMetadataSafeStatement();
+
+                    rs = stmt.executeQuery("select @@session.tx_read_only");
+                    if (rs.next()) {
+                        return rs.getInt(1) != 0; // mysql has a habit of tri+ state booleans
+                    }
+                } catch (SQLException ex1) {
+                    if (ex1.getErrorCode() != MysqlErrorNumbers.ER_MUST_CHANGE_PASSWORD || getDisconnectOnExpiredPasswords()) {
+                        throw SQLError.createSQLException("Could not retrieve transation read-only status server", SQLError.SQL_STATE_GENERAL_ERROR, ex1,
+                                getExceptionInterceptor());
+                    }
+                }
+
+            } finally {
+                if (rs != null) {
+                    try {
+                        rs.close();
+                    } catch (Exception ex) {
+                        // ignore
+                    }
+
+                    rs = null;
+                }
+
+                if (stmt != null) {
+                    try {
+                        stmt.close();
+                    } catch (Exception ex) {
+                        // ignore
+                    }
+
+                    stmt = null;
+                }
+            }
+        }
+
+        return this.readOnly;
+    }
+#+END_SRC
+其中if中的逻辑可以理解为：如果userLocalSession为false，那么就到数据库执行如下查询
+#+BEGIN_SRC java
+"select @@session.tx_read_only"
+#+END_SRC
+
+该参数的默认值是什么？ 以及在什么场景下可以开启该参数？
+参考： [[https://forums.mysql.com/read.php?39,626495,626511#msg-626511][Why is useLocalSessionState false by default]]
+#+BEGIN_SRC
+It's on by default because some applications (wrongly) do things
+like Statement.execute("set auto_commit=0"), and that coupled with
+"useLocalSessionState=true" as a default would break many things.
+The JDBC specification *requires* that the driver returns the *true*
+state of the session for calls like getAutoCommit(), getTransactionIsolation(), etc.
+Short of parsing every single statement issued through the driver, we use a safe default.
+If the user knows their application doesn't issue statements that change the session states
+around transactions, they can toggle the configuration value to get more performance.
+We err on the side of correct behavior first, performance second with the default configurations of the JDBC driver.
+#+END_SRC
+
+
+
+验证spring中关于事务传播性的特性，需要通过单元测试的形式，进行验证，分别在两个方法中分别有两个有Trasactional标注的方法
+#+BEGIN_SRC java
+@Tran
+#+END_SRC
+
+#+BEGIN_SRC
+ * This transaction manager supports nested transactions via JDBC 3.0 Savepoints.
+ * The {@link #setNestedTransactionAllowed "nestedTransactionAllowed"} flag defaults
+ * to {@code false} though, since nested transactions will just apply to the JDBC
+ * Connection, not to the JPA EntityManager and its cached entity objects and related
+ * context. You can manually set the flag to {@code true} if you want to use nested
+ * transactions for JDBC access code which participates in JPA transactions (provided
+ * that your JDBC driver supports Savepoints). <i>Note that JPA itself does not support
+ * nested transactions! Hence, do not expect JPA access code to semantically
+ * participate in a nested transaction.
+#+END_SRC
+1、需要弄明白项目使用的是JDBC的哪一个版本的规范是 3.0 还是4.0 ？
+   项目使用的是mysql-connector-java-5.1.39，所以查看 [[https://dev.mysql.com/doc/connector-j/5.1/en/connector-j-overview.html][connector-j-overview]] ，看到关于JDBC的介绍连接 [[https://www.oracle.com/technetwork/java/javase/jdbc/index.html][jdbc-index]]
+发现jdbc的规范的版本和使用的jdk的版本有关系，目前项目使用的是java 8 ，所以使用的是[[https://docs.oracle.com/javase/8/docs/technotes/guides/jdbc/jdbc_42.html][jdbc 4.2的规范]]
+
+2、JPA本身是不支持内嵌事务，但是JDBC 3.0的规范支持内嵌事务，所以Spring是通过操作JDBC 的Connection对象
+实现的内嵌事务，如果被内嵌事务包裹的那部分代码需要参与到JPA的事务，那么需要设置
+#+BEGIN_SRC java
+setNestedTransactionAllowed(true)
+#+END_SRC
+
+
+
+
+** Atlas

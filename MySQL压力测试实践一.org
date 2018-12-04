@@ -1,0 +1,332 @@
+* 概述
+
+最近在做基于kingshard和mycat的技术选型，所以需要对mysql、和分别被kingshard和mycat代理之后的mysql做压力测试横向对比性能数据，
+以此作为选型的些数据支撑。
+
+本文主要讲述如何利用Sysbench进行MySQL性能测试和调优的实践过程， （什么是sysbench？ 参考： [[https://github.com/akopytov/sysbench][sysbench-github]] ）。
+
+* 具体的压力测试步骤
+
+** 安装MySQL，
+
+#+BEGIN_SRC
+yum install mysql-server mysql mysql-devel
+#+END_SRC
+
+** 重置初始化密码
+以如下方式得到mysql的初始化密码
+#+BEGIN_SRC
+grep 'temporary password' /var/log/mysqld.log
+#+END_SRC
+通过mysql-cli,进行root密码的重置
+
+** 检查mysql的安装路经并进行相应的调整
+打开/etc/my.cnf文件，发现mysql默认安装在 /var/lib/mysql路经下，
+再检查系统磁盘的挂载情况：
+#+BEGIN_SRC
+df -h
+Filesystem               Size  Used Avail Use% Mounted on
+/dev/mapper/centos-root   50G   22G   29G  43% /
+devtmpfs                  63G     0   63G   0% /dev
+tmpfs                     63G     0   63G   0% /dev/shm
+tmpfs                     63G  9.5M   63G   1% /run
+tmpfs                     63G     0   63G   0% /sys/fs/cgroup
+/dev/sda2               1016M  180M  836M  18% /boot
+/dev/mapper/centos-home  2.2T  151G  2.0T   7% /home
+tmpfs                     13G     0   13G   0% /run/user/0
+#+END_SRC
+发现磁盘挂载在/home路经下，因此需要调整mysql的文件路经到 /home 目录下
+如何调整？ 参考我的另一篇博客 [[http://wangzhenhua.rocks/mysql-data-change-datadier-practice.html][MySQL5的磁盘目录调整实践]] ，基于这个文章，我将mysql的目录调整到 /home/michael/mysql-data目录下
+
+** 安装sysbench
+
+#+BEGIN_SRC
+yum install sysbench
+#+END_SRC
+
+** sysbench的一些脚本说明
+
+sysbench被安装在/usr/share/sysbench目录下，在tests目录下有如下脚本，我们本次压力测试会使用:
+
+#+BEGIN_SRC
+tests/include/oltp_legacy/oltp.lua  : 这是读写混合的脚本，按照4:1的方式设置读写数量
+tests/include/oltp_legacy/select.lua ：只读脚本
+tests/include/oltp_legacy/insert.lua : 只写脚本
+#+END_SRC
+
+** 准备测试数据库
+#+BEGIN_SRC
+CREATE DATABASE sb_test CHARACTER SET utf8;
+GRANT ALL PRIVILEGES ON sb_test.* TO 'sb_test'@'%' IDENTIFIED BY 'abAB,.1234' with grant option;
+#+END_SRC
+
+** 准备测试的数据
+#+BEGIN_SRC
+sysbench ./tests/include/oltp_legacy/oltp.lua \
+     --db-driver=mysql \
+     --mysql-user=sb_test \
+     --mysql-password=abAB,.1234 \
+     --events=100000 \
+     --mysql-db=sb_test  \
+     --oltp-table-size=10000  \
+     --oltp-tables-count=1  \
+     --report-interval=1 \
+     --mysql-host=10.1.4.159 \
+     --mysql-port=3306  \
+     --threads=32 \
+      prepare
+#+END_SRC
+
+** 做基本的参数调优
+*** 调整系统句柄
+在/etc/limits.conf中增加如下内容，再重启服务器
+#+BEGIN_SRC
+#+BEGIN_SRC
+    soft noproc   65535
+    hard noproc   65535
+    soft nofile   65535
+    hard nofile   65535
+#+END_SRC
+
+
+*** 调整mysql服务器的配置
+将/etc/my.conf调整如下内容:
+#+BEGIN_SRC
+[mysqld]
+datadir=/home/michael/mysql
+socket=/home/michael/mysql/mysql.sock
+
+innodb-buffer-pool-size=100G
+symbolic-links=0
+max_connections=512
+
+log-error=/var/log/mysqld.log
+pid-file=/var/run/mysqld/mysqld.pid
+
+[client]
+port=3306
+socket=/home/michael/mysql/mysql.sock
+#+END_SRC
+其中innodb-buffer-pool-size为物理内存的3/4到4/5之间，测试的机器的内存为120G,所以设置为100G
+** 进行写压力测试
+#+BEGIN_SRC
+sysbench ./tests/include/oltp_legacy/insert.lua \
+     --db-driver=mysql \
+     --mysql-user=sb_test \
+     --mysql-password=abAB,.1234 \
+     --events=100000 \
+     --mysql-db=sb_test  \
+     --oltp-table-size=10000  \
+     --oltp-tables-count=1  \
+     --report-interval=1 \
+     --mysql-host=10.1.4.159 \
+     --mysql-port=3306  \
+     --threads=32 \
+      run
+#+END_SRC
+
+得到如下结果：
+#+BEGIN_SRC
+sysbench 1.0.15 (using bundled LuaJIT 2.1.0-beta2)
+
+Running the test with following options:
+Number of threads: 32
+Report intermediate results every 1 second(s)
+Initializing random number generator from current time
+
+
+Initializing worker threads...
+
+Threads started!
+
+[ 1s ] thds: 32 tps: 4678.74 qps: 4678.74 (r/w/o: 0.00/4678.74/0.00) lat (ms,95%): 4.65 err/s: 0.00 reconn/s: 0.00
+[ 2s ] thds: 32 tps: 7987.30 qps: 7987.30 (r/w/o: 0.00/7987.30/0.00) lat (ms,95%): 4.82 err/s: 0.00 reconn/s: 0.00
+[ 3s ] thds: 32 tps: 8253.85 qps: 8253.85 (r/w/o: 0.00/8253.85/0.00) lat (ms,95%): 4.33 err/s: 0.00 reconn/s: 0.00
+[ 4s ] thds: 32 tps: 8337.89 qps: 8337.89 (r/w/o: 0.00/8337.89/0.00) lat (ms,95%): 4.10 err/s: 0.00 reconn/s: 0.00
+[ 5s ] thds: 32 tps: 8377.50 qps: 8377.50 (r/w/o: 0.00/8377.50/0.00) lat (ms,95%): 4.10 err/s: 0.00 reconn/s: 0.00
+[ 6s ] thds: 32 tps: 8272.03 qps: 8272.03 (r/w/o: 0.00/8272.03/0.00) lat (ms,95%): 4.18 err/s: 0.00 reconn/s: 0.00
+[ 7s ] thds: 32 tps: 8366.33 qps: 8366.33 (r/w/o: 0.00/8366.33/0.00) lat (ms,95%): 4.10 err/s: 0.00 reconn/s: 0.00
+[ 8s ] thds: 32 tps: 8327.11 qps: 8327.11 (r/w/o: 0.00/8327.11/0.00) lat (ms,95%): 4.18 err/s: 0.00 reconn/s: 0.00
+[ 9s ] thds: 32 tps: 8330.31 qps: 8330.31 (r/w/o: 0.00/8330.31/0.00) lat (ms,95%): 4.18 err/s: 0.00 reconn/s: 0.00
+[ 10s ] thds: 32 tps: 8208.60 qps: 8208.60 (r/w/o: 0.00/8208.60/0.00) lat (ms,95%): 4.18 err/s: 0.00 reconn/s: 0.00
+SQL statistics:
+    queries performed:
+        read:                            0
+        write:                           79197
+        other:                           0
+        total:                           79197
+    transactions:                        79197  (7908.17 per sec.)
+    queries:                             79197  (7908.17 per sec.)
+    ignored errors:                      0      (0.00 per sec.)
+    reconnects:                          0      (0.00 per sec.)
+
+General statistics:
+    total time:                          10.0103s
+    total number of events:              79197
+
+Latency (ms):
+         min:                                    3.35
+         avg:                                    4.04
+         max:                                  407.12
+         95th percentile:                        4.25
+         sum:                               319830.41
+
+Threads fairness:
+    events (avg/stddev):           2474.9062/9.16
+    execution time (avg/stddev):   9.9947/0.00
+#+END_SRC
+
+** 进行读压力测试
+#+BEGIN_SRC
+sysbench ./tests/include/oltp_legacy/select.lua \
+     --db-driver=mysql \
+     --mysql-user=sb_test \
+     --mysql-password=abAB,.1234 \
+     --events=100000 \
+     --mysql-db=sb_test  \
+     --oltp-table-size=10000  \
+     --oltp-tables-count=1  \
+     --report-interval=1 \
+     --mysql-host=10.1.4.159 \
+     --mysql-port=3306  \
+     --threads=32 \
+      run
+#+END_SRC
+
+得到的结果如下：
+#+BEGIN_SRC
+sysbench 1.0.15 (using bundled LuaJIT 2.1.0-beta2)
+
+Running the test with following options:
+Number of threads: 32
+Report intermediate results every 1 second(s)
+Initializing random number generator from current time
+
+
+Initializing worker threads...
+
+Threads started!
+
+[ 1s ] thds: 32 tps: 8924.09 qps: 8924.09 (r/w/o: 8924.09/0.00/0.00) lat (ms,95%): 3.82 err/s: 0.00 reconn/s: 0.00
+[ 2s ] thds: 32 tps: 8958.96 qps: 8958.96 (r/w/o: 8958.96/0.00/0.00) lat (ms,95%): 3.75 err/s: 0.00 reconn/s: 0.00
+[ 3s ] thds: 32 tps: 9132.38 qps: 9132.38 (r/w/o: 9132.38/0.00/0.00) lat (ms,95%): 3.75 err/s: 0.00 reconn/s: 0.00
+[ 4s ] thds: 32 tps: 9131.08 qps: 9131.08 (r/w/o: 9131.08/0.00/0.00) lat (ms,95%): 3.75 err/s: 0.00 reconn/s: 0.00
+[ 5s ] thds: 32 tps: 9330.11 qps: 9330.11 (r/w/o: 9330.11/0.00/0.00) lat (ms,95%): 3.62 err/s: 0.00 reconn/s: 0.00
+[ 6s ] thds: 32 tps: 9219.56 qps: 9219.56 (r/w/o: 9219.56/0.00/0.00) lat (ms,95%): 3.68 err/s: 0.00 reconn/s: 0.00
+[ 7s ] thds: 32 tps: 9127.99 qps: 9127.99 (r/w/o: 9127.99/0.00/0.00) lat (ms,95%): 3.75 err/s: 0.00 reconn/s: 0.00
+[ 8s ] thds: 32 tps: 9170.74 qps: 9170.74 (r/w/o: 9170.74/0.00/0.00) lat (ms,95%): 3.75 err/s: 0.00 reconn/s: 0.00
+[ 9s ] thds: 32 tps: 9224.47 qps: 9224.47 (r/w/o: 9224.47/0.00/0.00) lat (ms,95%): 3.68 err/s: 0.00 reconn/s: 0.00
+[ 10s ] thds: 32 tps: 9343.06 qps: 9343.06 (r/w/o: 9343.06/0.00/0.00) lat (ms,95%): 3.62 err/s: 0.00 reconn/s: 0.00
+SQL statistics:
+    queries performed:
+        read:                            91654
+        write:                           0
+        other:                           0
+        total:                           91654
+    transactions:                        91654  (9154.28 per sec.)
+    queries:                             91654  (9154.28 per sec.)
+    ignored errors:                      0      (0.00 per sec.)
+    reconnects:                          0      (0.00 per sec.)
+
+General statistics:
+    total time:                          10.0083s
+    total number of events:              91654
+
+Latency (ms):
+         min:                                    3.13
+         avg:                                    3.49
+         max:                                   30.90
+         95th percentile:                        3.75
+         sum:                               319787.58
+
+Threads fairness:
+    events (avg/stddev):           2864.1875/5.43
+    execution time (avg/stddev):   9.9934/0.00
+#+END_SRC
+** 进行读写混合压力测试
+#+BEGIN_SRC
+sysbench ./tests/include/oltp_legacy/oltp.lua \
+     --db-driver=mysql \
+     --mysql-user=sb_test \
+     --mysql-password=abAB,.1234 \
+     --events=100000 \
+     --mysql-db=sb_test  \
+     --oltp-table-size=10000  \
+     --oltp-tables-count=1  \
+     --report-interval=1 \
+     --mysql-host=10.1.4.159 \
+     --mysql-port=3306  \
+     --threads=16 \
+      run
+#+END_SRC
+
+得到的结果如下
+#+BEGIN_SRC
+sysbench 1.0.15 (using bundled LuaJIT 2.1.0-beta2)
+
+Running the test with following options:
+Number of threads: 16
+Report intermediate results every 1 second(s)
+Initializing random number generator from current time
+
+
+Initializing worker threads...
+
+Threads started!
+
+[ 1s ] thds: 16 tps: 45.67 qps: 1165.54 (r/w/o: 861.75/194.59/109.21) lat (ms,95%): 419.45 err/s: 1.99 reconn/s: 0.00
+[ 2s ] thds: 16 tps: 89.12 qps: 1714.30 (r/w/o: 1182.58/351.47/180.24) lat (ms,95%): 267.41 err/s: 3.00 reconn/s: 0.00
+[ 3s ] thds: 16 tps: 36.00 qps: 807.09 (r/w/o: 579.06/154.02/74.01) lat (ms,95%): 467.30 err/s: 2.00 reconn/s: 0.00
+[ 4s ] thds: 16 tps: 83.97 qps: 1709.32 (r/w/o: 1200.52/337.87/170.93) lat (ms,95%): 467.30 err/s: 2.00 reconn/s: 0.00
+[ 5s ] thds: 16 tps: 52.01 qps: 1044.22 (r/w/o: 731.16/210.04/103.02) lat (ms,95%): 363.18 err/s: 0.00 reconn/s: 0.00
+[ 6s ] thds: 16 tps: 44.00 qps: 850.92 (r/w/o: 591.94/171.98/86.99) lat (ms,95%): 450.77 err/s: 0.00 reconn/s: 0.00
+[ 7s ] thds: 16 tps: 95.03 qps: 1927.54 (r/w/o: 1359.38/377.11/191.05) lat (ms,95%): 248.83 err/s: 0.00 reconn/s: 0.00
+[ 8s ] thds: 16 tps: 43.00 qps: 882.90 (r/w/o: 613.93/180.98/87.99) lat (ms,95%): 419.45 err/s: 1.00 reconn/s: 0.00
+[ 9s ] thds: 16 tps: 74.02 qps: 1470.43 (r/w/o: 1030.30/291.08/149.04) lat (ms,95%): 427.07 err/s: 2.00 reconn/s: 0.00
+[ 10s ] thds: 16 tps: 25.01 qps: 576.23 (r/w/o: 417.16/108.04/51.02) lat (ms,95%): 657.93 err/s: 0.00 reconn/s: 0.00
+SQL statistics:
+    queries performed:
+        read:                            8624
+        write:                           2428
+        other:                           1220
+        total:                           12272
+    transactions:                        604    (59.31 per sec.)
+    queries:                             12272  (1204.96 per sec.)
+    ignored errors:                      12     (1.18 per sec.)
+    reconnects:                          0      (0.00 per sec.)
+
+General statistics:
+    total time:                          10.1791s
+    total number of events:              604
+
+Latency (ms):
+         min:                                  105.33
+         avg:                                  267.70
+         max:                                  804.80
+         95th percentile:                      502.20
+         sum:                               161689.73
+
+Threads fairness:
+    events (avg/stddev):           37.7500/0.90
+    execution time (avg/stddev):   10.1056/0.06
+#+END_SRC
+其中有错误发生，说明这里的mysql服务器的配置需要调整，下面需要思考和探索如何进行配置调整，满足基本的32线程的测试场景需求
+
+接着对my.cnf中增加了如下的配置项后，再进行读写混合的压力测试，发现仍然有error发生。
+
+#+BEGIN_SRC
+max_connections=10000
+max_user_connections=0
+innodb_thread_concurrency=64
+back_log=2048
+#+END_SRC
+每个参数的含义如下：
+#+BEGIN_SRC
+1、max_connections：mysql服务允许最多开启10000个连接
+2、max_user_connections ：允许每个用户最大的连接数
+3、innodb_thread_concurrency： mysql在执行任务的时，能够使用多个cpu并行执行任务
+4、back_log： 当请求数量大于max_connections的数量之后,新的请求被放堆栈中，等待一些释放的请求
+#+END_SRC
+* 总结
+这里主有记录了对mysql进行性能测试的一些准备工作和一些简单的测试，其中在进行读写混合场景的测试的时后，有error出现，如果出现error，
+说明mysql服务性能不能满足测试的条件要求，所以需要继续对mysql进行参数调优来满足32线程的测试需求。如何调优化，明天继续。

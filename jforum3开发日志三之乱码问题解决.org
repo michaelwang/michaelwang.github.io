@@ -1,0 +1,44 @@
+项目启动之后，发现在添加分类的时后有乱码，
+于是查看了数据库的编码设置，发现表和数据库在
+创建的时后都指定了UTF-8，应该和数据库没有关系。
+#+BEGIN_SRC
+show create database jforum3;
++----------+------------------------------------------------------------------+
+| Database | Create Database                                                  |
++----------+------------------------------------------------------------------+
+| jforum3  | CREATE DATABASE `jforum3` /*!40100 DEFAULT CHARACTER SET utf8 */ |
++----------+------------------------------------------------------------------+
+1 row in set (0.00 sec)
+#+END_SRC
+
+#+BEGIN_SRC
+show create table jforum_categories;
++-------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Table             | Create Table                                                                                                                                                                                                                                                                                                                                                                                                               |
++-------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| jforum_categories | CREATE TABLE `jforum_categories` (
+  `category_id` int(11) NOT NULL AUTO_INCREMENT,
+  `category_title` varchar(100) NOT NULL DEFAULT '',
+  `category_order` int(11) NOT NULL DEFAULT '0',
+  `category_moderated` tinyint(1) DEFAULT '0',
+  `category_theme_id` int(11) DEFAULT NULL,
+  PRIMARY KEY (`category_id`),
+  KEY `category_theme_id` (`category_theme_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=13 DEFAULT CHARSET=utf8 |
++-------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+1 row in set (0.01 sec)
+#+END_SRC
+
+再检查jforum和数据库之间的连接配置情况，发现如下配置：
+#+BEGIN_SRC
+                <property name="hibernate.dialect">org.hibernate.dialect.MySQL5InnoDBDialect</property>
+                <property name="hibernate.connection.url">jdbc:mysql://localhost:3306/jforum3</property>
+                <property name="hibernate.connection.driver_class">com.mysql.jdbc.Driver</property>
+#+END_SRC
+这里并没有指定编码。于是尝试增加如下的编码设置：
+#+BEGIN_SRC
+                <property name="hibernate.connection.characterEncoding">utf8</property>
+                <property name="hibernate.connection.CharSet">utf8</property>
+                <property name="hibernate.connection.useUnicode">true</property>
+#+END_SRC
+再启动工程,添加一个中文名称的分类，可以正常显示中文。
