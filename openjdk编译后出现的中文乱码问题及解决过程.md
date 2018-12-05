@@ -72,7 +72,6 @@ VM settings:
     Max. Heap Size (Estimated): 1.70G
     Ergonomics Machine Class: server
     Using VM: OpenJDK 64-Bit Server VM
-
 Property settings:
     awt.toolkit = sun.awt.X11.XToolkit
     file.encoding = UTF-8
@@ -136,7 +135,6 @@ Property settings:
     user.language = zh
     user.name = root
     user.timezone =
-
 Locale settings:
     default locale = ÖÐÎÄ
     default display locale = ÖÐÎÄ (ÖÐ¹ú)
@@ -161,7 +159,6 @@ Locale settings:
         sr_BA, sr_BA_#Latn, sr_CS, sr_ME, sr_ME_#Latn, sr_RS, sr_RS_#Latn, sr__#Latn,
         sv, sv_SE, th, th_TH, th_TH_TH_#u-nu-thai, tr, tr_TR, uk,
         uk_UA, vi, vi_VN, zh, zh_CN, zh_HK, zh_SG, zh_TW
-
 openjdk version "1.8.0_161"
 OpenJDK Runtime Environment (build 1.8.0_161-b14)
 OpenJDK 64-Bit Server VM (build 25.161-b14, mixed mode)
