@@ -66,7 +66,7 @@ LC_ALL=
 
 
 ## 部署的服务器上Java的编码信息
-
+    
 [root@srv ~]# java -XshowSettings:all -version
 VM settings:
     Max. Heap Size (Estimated): 1.70G
@@ -87,7 +87,7 @@ Property settings:
     user.language = zh
     user.name = root
     user.timezone =
-
+    
 
 # 问题分析和解决过程
 
