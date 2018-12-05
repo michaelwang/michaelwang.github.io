@@ -81,87 +81,12 @@ Property settings:
     java.awt.printerjob = sun.print.PSPrinterJob
     java.class.path = .
     java.class.version = 52.0
-    java.endorsed.dirs = /usr/lib/jvm/java-1.8.0-openjdk-1.8.0.161-2.b14.el7.x86_64/jre/lib/endorsed
-    java.ext.dirs = /usr/lib/jvm/java-1.8.0-openjdk-1.8.0.161-2.b14.el7.x86_64/jre/lib/ext
-        /usr/java/packages/lib/ext
-    java.home = /usr/lib/jvm/java-1.8.0-openjdk-1.8.0.161-2.b14.el7.x86_64/jre
-    java.io.tmpdir = /tmp
-    java.library.path = /usr/java/packages/lib/amd64
-        /usr/lib64
-        /lib64
-        /lib
-        /usr/lib
-    java.runtime.name = OpenJDK Runtime Environment
-    java.runtime.version = 1.8.0_161-b14
-    java.specification.name = Java Platform API Specification
-    java.specification.vendor = Oracle Corporation
-    java.specification.version = 1.8
-    java.vendor = Oracle Corporation
-    java.vendor.url = http://java.oracle.com/
-    java.vendor.url.bug = http://bugreport.sun.com/bugreport/
-    java.version = 1.8.0_161
-    java.vm.info = mixed mode
-    java.vm.name = OpenJDK 64-Bit Server VM
-    java.vm.specification.name = Java Virtual Machine Specification
-    java.vm.specification.vendor = Oracle Corporation
-    java.vm.specification.version = 1.8
-    java.vm.vendor = Oracle Corporation
-    java.vm.version = 25.161-b14
-    line.separator = \n
-    os.arch = amd64
-    os.name = Linux
-    os.version = 3.10.0-862.el7.x86_64
-    path.separator = :
-    sun.arch.data.model = 64
-    sun.boot.class.path = /usr/lib/jvm/java-1.8.0-openjdk-1.8.0.161-2.b14.el7.x86_64/jre/lib/resources.jar
-        /usr/lib/jvm/java-1.8.0-openjdk-1.8.0.161-2.b14.el7.x86_64/jre/lib/rt.jar
-        /usr/lib/jvm/java-1.8.0-openjdk-1.8.0.161-2.b14.el7.x86_64/jre/lib/sunrsasign.jar
-        /usr/lib/jvm/java-1.8.0-openjdk-1.8.0.161-2.b14.el7.x86_64/jre/lib/jsse.jar
-        /usr/lib/jvm/java-1.8.0-openjdk-1.8.0.161-2.b14.el7.x86_64/jre/lib/jce.jar
-        /usr/lib/jvm/java-1.8.0-openjdk-1.8.0.161-2.b14.el7.x86_64/jre/lib/charsets.jar
-        /usr/lib/jvm/java-1.8.0-openjdk-1.8.0.161-2.b14.el7.x86_64/jre/lib/jfr.jar
-        /usr/lib/jvm/java-1.8.0-openjdk-1.8.0.161-2.b14.el7.x86_64/jre/classes
-    sun.boot.library.path = /usr/lib/jvm/java-1.8.0-openjdk-1.8.0.161-2.b14.el7.x86_64/jre/lib/amd64
-    sun.cpu.endian = little
-    sun.cpu.isalist =
-    sun.io.unicode.encoding = UnicodeLittle
-    sun.java.launcher = SUN_STANDARD
-    sun.jnu.encoding = UTF-8
-    sun.management.compiler = HotSpot 64-Bit Tiered Compilers
-    sun.os.patch.level = unknown
     user.country = CN
     user.dir = /root
     user.home = /root
     user.language = zh
     user.name = root
     user.timezone =
-Locale settings:
-    default locale = ÖÐÎÄ
-    default display locale = ÖÐÎÄ (ÖÐ¹ú)
-    default format locale = ÖÐÎÄ (ÖÐ¹ú)
-    available locales = , ar, ar_AE, ar_BH, ar_DZ, ar_EG, ar_IQ, ar_JO,
-        ar_KW, ar_LB, ar_LY, ar_MA, ar_OM, ar_QA, ar_SA, ar_SD,
-        ar_SY, ar_TN, ar_YE, be, be_BY, bg, bg_BG, ca,
-        ca_ES, cs, cs_CZ, da, da_DK, de, de_AT, de_CH,
-        de_DE, de_GR, de_LU, el, el_CY, el_GR, en, en_AU,
-        en_CA, en_GB, en_IE, en_IN, en_MT, en_NZ, en_PH, en_SG,
-        en_US, en_ZA, es, es_AR, es_BO, es_CL, es_CO, es_CR,
-        es_CU, es_DO, es_EC, es_ES, es_GT, es_HN, es_MX, es_NI,
-        es_PA, es_PE, es_PR, es_PY, es_SV, es_US, es_UY, es_VE,
-        et, et_EE, fi, fi_FI, fr, fr_BE, fr_CA, fr_CH,
-        fr_FR, fr_LU, ga, ga_IE, hi, hi_IN, hr, hr_HR,
-        hu, hu_HU, in, in_ID, is, is_IS, it, it_CH,
-        it_IT, iw, iw_IL, ja, ja_JP, ja_JP_JP_#u-ca-japanese, ko, ko_KR,
-        lt, lt_LT, lv, lv_LV, mk, mk_MK, ms, ms_MY,
-        mt, mt_MT, nl, nl_BE, nl_NL, no, no_NO, no_NO_NY,
-        pl, pl_PL, pt, pt_BR, pt_PT, ro, ro_RO, ru,
-        ru_RU, sk, sk_SK, sl, sl_SI, sq, sq_AL, sr,
-        sr_BA, sr_BA_#Latn, sr_CS, sr_ME, sr_ME_#Latn, sr_RS, sr_RS_#Latn, sr__#Latn,
-        sv, sv_SE, th, th_TH, th_TH_TH_#u-nu-thai, tr, tr_TR, uk,
-        uk_UA, vi, vi_VN, zh, zh_CN, zh_HK, zh_SG, zh_TW
-openjdk version "1.8.0_161"
-OpenJDK Runtime Environment (build 1.8.0_161-b14)
-OpenJDK 64-Bit Server VM (build 25.161-b14, mixed mode)
 
 
 # 问题分析和解决过程
