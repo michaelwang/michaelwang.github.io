@@ -82,7 +82,7 @@ file.encoding是在
  Charset.defaultCharset()
 ```
 使用的，sun.jnu.encoding是被用来专门解析file path和native file path，但是该问题也是在打包从
-Oracle JDK切换到Open JDK打包出现，所以根本原因还是需要继续分析JDK的差异
+Oracle JDK切换到Open JDK打包出现，所以根本原因还是需要继续分析JDK版本之间的差异
 
 # 参考资料
 [file.encoding vs. sun.jnu.encoding(?) on OS X](http://mail.openjdk.java.net/pipermail/jdk8-dev/2012-November/001610.html)
