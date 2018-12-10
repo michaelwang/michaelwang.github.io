@@ -1,53 +1,49 @@
-# 问题的现象的描述
-
-凡是在Java类的中文被打印输出时变为乱码。
-
-# 问题发生前后的环境差异检查
+# 概述
 
 项目的打包是通过Jenkins进行的，
-由于对Jenkins进行了一次升级和数据迁移，
-而乱码问题是发生在升级迁移之后，所以排查
-问题从前后打包环境的差异性开始
+由于对Jenkins进行了一次升级和数据迁移之后，
+凡是在Java类中有中文字符输出的地方，都变为乱码。
+乱码问题是发生在升级迁移之后，
+后来通过在jvm的启动参数追加-Dfile.encoding解决该问题，下面是问题的详细分析过程：
 
-
-## 发生问题之前的打包环境
-
+# 发生问题之前的打包环境
+```
 [root@server ~]# java -version
 java -version
 java version "1.8.0_152"
 Java(TM) SE Runtime Environment (build 1.8.0_152-b16)
 Java HotSpot(TM) 64-Bit Server VM (build 25.152-b16, mixed mode)
-
+```
 
 Jenkins版本为2.53，启动方式为
-
-
+```
 /etc/init.d/jenkins start
-
+```
 
 # 发生问题时的打包环境
 
-
+```
 jenkins@84d299b30e0d:/$ java -version
 java -version
 openjdk version "1.8.0_171"
 OpenJDK Runtime Environment (build 1.8.0_171-8u171-b11-1~deb9u1-b11)
 OpenJDK 64-Bit Server VM (build 25.171-b11, mixed mode)
-
+```
 
 Jenkins版本2.107.3，启动方式为
-
-
+```
 docker run -d --name myjenkins -p 80:8080 -p 50000:50000 -v /some/path/jenkins_data:/var/jenkins_home -v /var/run/docker.sock:/var/run/docker.sock jenkins
-
+```
 
 ## 部署的服务器信息
 
+``` 
 [sshuser@server ~]$ rpm -q centos-release
 centos-release-7-5.1804.el7.centos.x86_64
+```
 
 ## 部署的服务器的编码信息
-
+```java
 [sshuser@server ~]$ locale
 LANG=en_US.UTF-8
 LC_CTYPE="en_US.UTF-8"
@@ -63,10 +59,10 @@ LC_TELEPHONE="en_US.UTF-8"
 LC_MEASUREMENT=zh_CN.UTF-8
 LC_IDENTIFICATION="en_US.UTF-8"
 LC_ALL=
-
+```
 
 ## 部署的服务器上Java的编码信息
-    
+```
 [root@srv ~]# java -XshowSettings:all -version
 VM settings:
     Max. Heap Size (Estimated): 1.70G
@@ -87,25 +83,25 @@ Property settings:
     user.language = zh
     user.name = root
     user.timezone =
-    
+```
 
 # 问题分析和解决过程
 
 Java文件中的中文输出到日志变为乱码，
 猜测可能和Javac编译时没有指定UTF-8有关系，
 项目是用Maven构建的，检查Maven的编码配置信息如下
-
+```
        <maven.compiler.source>1.8</maven.compiler.source>
        <maven.compiler.target>1.8</maven.compiler.target>
        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-
+```
 所以排除和Maven的关系。
 
 从服务器上的Java编码情况来看
-
+```
     sun.jnu.encoding = UTF-8
     file.encoding = UTF-8
-
+```
 运行时默认的编码设置都是UTF-8。
 那么编译时和运行时的编码设置都是UTF-8，理论上不应该出
 Java文件中的中文输出为乱码，所以怀疑是应用运行时没有获取到Java的默认编码设置，
