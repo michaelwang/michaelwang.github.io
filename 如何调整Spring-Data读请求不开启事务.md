@@ -1,6 +1,6 @@
 ## 概述
 
-接着上一篇的文章[[http://wangzhenhua.rocks/mycat-jpa-spring-transaction.html][MyCAT-Spring-Boot-JPA中间件使用过程的问题]] 提到的问题，Spring Data 默认会对所有的读数据请求加上事务
+接着上一篇的文章[MyCAT-Spring-Boot-JPA中间件使用过程的问题](http://wangzhenhua.rocks/zh-hans/node/6)提到的问题，Spring Data 默认会对所有的读数据请求加上事务
 但是在使用类似MyCAT、KingShard的读写分离中间件的时后，会将带有事务的请求都发送到主库上去，而达不到读写分离需求。
 因此我们需要对Spring Data进行一定的改造，能够让读数据的请求不被事务包裹，而达到利用中间件读写分离的目的。
 
