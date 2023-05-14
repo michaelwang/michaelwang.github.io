@@ -1,0 +1,37 @@
+---
+layout: post
+title:  "Flink的工作原理分析"
+date:   2020-10-22 20:13:11 +0900
+categories: 实时计算
+---
+
+## 概述
+最近由于工作需要，使用了实时计算引擎Flink, 这篇文章主要总结学习到的Flink内部设计原理。
+
+## Flink在内存里都干了哪些事情？
+
+1.**对记录进行排序、聚合、哈希**
+
+2.**对接受到的数据进行序列化和反序列化**
+
+## Flink是如何高效的处理序列化的数据
+
+在Java里，序列化组件有**Avro**或者**Kyro**, 但是Flink为了追求高效而自己开发了一套序列化工具，数据在内存磁盘之间传输或者网络之间传输之后，不再需要反序列化，接受方可以直接操作序列化后的数据；
+
+## 如何解决处理大数据量时JVM的GC引起的效率下降的问题
+
+Flink中大量的使用了非堆内存来解决这个问题，将大量的数据放在堆外内存中处理，避免了堆内的GC，使用了sun.Unsafe对象操作非堆内存；
+
+Flink的TaskManager将堆内的内存分为三个部分： User Code区域, Manage Memory区域 , Network Memory区域 , User Code 区域是在新生代 保存了关于用户算子等代码，Manage Memory区域是在老年代，从各种Source中接收到的数据都会保存在这个区域内，因为在老年代，所以大量的数据进入不会引起频繁的GC，但是如果进入的数据确实很多，超出了老年代的限制，TaskManager通过使用sun.io.Unsafe 类将数据写入到堆外内存，如果堆外内存也写满了， 数据会被写入到磁盘中，为了保证写入和读取的高效，Flink实现了自定义的序列化框架；
+
+Flink追求高效的处理数据，在1.7版本之前是可以使用Avro或者Kyro来序列化的，但是在1.10版本之后，Flink自定义了一套序列工具，为了解决在迁移Job的时候，解决序列化对象的格式变更引起的序列化失败的错误；对于每一种数据类型Flink都又开发对应的数据类型来处理。
+
+## 什么是反压问题和如何解决该问题
+
+### 反压问题
+
+TaskManager之间的通信和TaskManager和JobManager之间的通信是通过Akka实现的，在通信过程中我们经常会发现反压的问题，这个问题可以抽象为： 当麦当劳的客户数量远远大于工作人员的数量的时候的场景，这是店里有很多的客户在等待，而工作人员很少的，此时就是反压的场景，上游节点的产生数据的速度大于下游节点处理数据的速度。
+
+### 在Flink中是如何解决这个问题的
+
+发送者和接收者之间设计了一个信用点卡的通信机制，sender要发送信息之前，receiver先告诉sender，我这里有多少credit，比如有5个，这5个credit体现在Channel的Exclusive Buffer中,另外还有一个叫做 Floating的Buffer，当exclusive buffer 不够用的时候，会向 Floating Buffer借用，receiver会积累一部分的数据然后批量发送给sender，这一步的作用是reciver告诉sender我这里有多少credit可用（也就是我这里有多少容量可以接收数据），sender发送一批数据后，还会告诉receiver我这里还有多少需要发送，此时reciver如果发现自己的exclusive buffer不够了，然后向Floating 索取，如此循环。 这个Exclusive Buffer是每个Channel独立的，那么什么是Channel？ 在NIO中，每个通道可以连接一个套接字，设备块，这里的Channel就是TaskManager独立的Slot之间的连接。
