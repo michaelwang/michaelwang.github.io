@@ -1,0 +1,109 @@
+---
+layout: post
+title:  "邮件客户端神器-Mutt"
+date:   2019-01-09 11:01:11 +0900
+categories: 方法论
+---
+
+## 背景介绍
+
+我们在日常的工作中，肯定要收取大量的邮件，你可能会说安装一个邮件客户端不就可以了吗？比如ThundBird，FoxMail等等。你这样说也没有问题，毕竟现在的电脑配置都是超高的，一个基于GUI的邮件客户端并不会消耗你多少资源，用鼠标操作，也可以查看邮件啊，那我想你肯定会遇到电脑死机，不管鼠标怎么点都没响应，然后你不得不去重启电脑，然后不得不去重新打开你重启电脑之前的所有窗口，也许这样的场景不多见，但是只要发生过一次，就要够你难受的，我做过分析，不管是什么操作系统：Windows、Mac、Fedora等，只要是基于GUI的应用，永远是资源消耗大户，所以如果要工作的流畅，就应该避免任何基于GUI的应用，日常工作中，收发邮件是一个频次很高的事件，我们有必要寻找一种邮件客户端工具，对系统资源开销最少，操作方面最高效的，所谓磨刀不误砍柴工，如果你想提高日常的办公效率，本文将会给你介绍一款基于命令行邮件客户端软件：Mutt，阅读完本文你会学会如下内容：
+
+1. 如何在 Fedora下安装 Mutt和相关的依赖；
+
+2. 如何配置 Mutt以及利用mutt发送和接收邮件；
+
+全文阅读完大概需要5至8分钟。
+
+## 详细介绍
+
+如何在Fedora下安装Mutt和相关依赖
+
+1. 从github上下载并安装，这是从源码进行编译然后安装
+
+        git clone https://github.com/LukeSmithxyz/mutt-wizard
+        cd mutt-wizard
+        sudo make install
+
+2. 上述步骤执行完之后，执行如下命令：
+
+        mw
+
+   可能会遇到如下的错误提示：
+
+        `pass` must be installed and initialized to encrypt password.
+        Be sure it is installed and run `pass init <yourgpgemail>`
+        If you don't have a GPG public private key pair , run `gpg --full-gen-key` first.
+
+   这是因为你的机器上需要安装`pass`和GPG这两个东西，这两个是在 Linux中用来保护你的账号和密码的工具，按照如下的方式进行安装：
+
+4. 安装pass
+
+        yum install pass
+
+5. pass安装完毕之后，再执行如下命令，初始化账号，这里需要输入你的邮件账号：
+
+        pass init $YourEmailAccount
+
+6. 初始化完之后，再生成GPG
+   先要检查你机器上的GPG的版本，可以用如下的方式检查：
+
+        gpg -version
+
+   如果你的版本低于2.1.17版本，那么就使用如下的命令：
+
+        gpg --gen-key
+
+   否则就用如下命令：
+
+        gpg --full-gen-key
+
+   在生成的过程中，会提示你输入账号信息，**一定要记住**，因为后面会用到这个账号，该账号和上面**步骤4**中的账号要保持一致。
+
+6. 当pass和gpg都安装完毕之后，我们还需要再安装mbsync，这是一个邮件同步的软件，在Fedora下面，我们可以用如下的方式安装:
+
+        sudo yum install isync
+
+7. 安装neomutt
+
+        dnf install dnf-plugins-core
+        dnf copr enable flatcap/neomutt
+        dnf install neomutt
+
+8. 安装msmtp，我们需要利用这个组件来发送邮件
+
+        yum install msmtp
+
+   经过如上的步骤，mutt和相关的依赖都安装完毕了，下面就是开始配置mutt了。
+
+9. 配置Mutt
+
+     1. 在命令行中执行如下命令，这里需要输入你的邮件账号，mutt会自动识别出你的邮箱的服务器地址、端口信息：
+
+            mw add $YourEmailAccount
+
+        好了，这里就根据它的提示一步步往下做就可以了。
+
+     2. 配置完成之后就需要进行账号里的数据同步了，执行如下的命令会将你邮箱账号下的所有邮件都同步到本地，在同步的过程中，需要你输入上面步骤5中的账号信息：
+
+            mbsycn -a 
+
+     3. 同步完成后，再输入如下的命令，就可以进入了基于命令行中的邮件列表：
+
+            neomutt
+
+     4. 如何发送邮件
+     
+        基于步骤3，你进入了一个邮件列表页面，在最上方有快捷键提示，比如如何进入收件箱、垃圾箱、等等，这里需要注意的是，编辑邮件是基于VI的文本编辑器的，编辑完之后保存，你会被引导到一个完整的发送界面，确认之后只需要按下快捷键“y”就可以将邮件发送出去。
+
+## 总结
+
+本文介绍了如何安装Mutt以及它的一些依赖，然后介绍了如何配置Mutt收取和查看和发送邮件。用了mutt，你会发现你的手不需要离开键盘，就可以完成收发邮件的所有事情，更关键的是mutt只占用很少的机器资源。
+
+*参考资料*
+
+[mutt-wizard](https://github.com/LukeSmithxyz/mutt-wizard)
+
+[gpg](http://irtfweb.ifa.hawaii.edu/~lockhart/gpg/)
+
+[NeoMutt for Fedora](https://neomutt.org/distro/fedora)
