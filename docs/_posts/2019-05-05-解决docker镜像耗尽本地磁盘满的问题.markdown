@@ -1,0 +1,28 @@
+---
+layout: post
+title:  "解决docker镜像耗尽本地磁盘满的问题"
+date:   2019-05-05 11:01:11 +0900
+categories: java
+---
+
+
+
+## 概述
+
+在使用docker的过程中，需要经常构建镜像，本地构建的镜像和从外部拉取的镜像就会慢慢耗尽本地的磁盘，本地磁盘被 耗尽就会导致镜像构建失败。
+
+## 解决办法
+
+docker默认是使用的是 /var/lib/docker目录，因为这个目录不是主目录，所以它的存储空间就不大。 通过如下的办法将docker的存储目录调整到主目录下去：
+
+1. 备份/var/lib/docker目录
+
+    mv /var/lib/docker /var/lib/docker_bak
+
+2. 在主目录下创建一个空目录，并将docker的存储目录 软链到该目录下
+
+    mkdir ~/docker-server    
+    cd /var/lib    
+    ln -s ~/docker-server docker    
+
+通过如上步骤就可以将docker的存储目录调整到主目录下，避免镜像生成到空间小的分区中。

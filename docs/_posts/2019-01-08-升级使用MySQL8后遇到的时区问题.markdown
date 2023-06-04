@@ -1,0 +1,102 @@
+---
+layout: post
+title:  "升级使用MySQL8后遇到的时区问题"
+date:   2019-01-08 11:01:11 +0900
+categories: java
+---
+
+# 问题的场景描述
+
+Java应用的数据库服务从MySQL Server 5.7升级到MySQL Server 8后, 同时升级了对应的mysql的驱动， 之后就出现了Java应用写入数据库的时间比当前的时间少了13个小时,这个问题是由于mysql server没有指定时区， 而导致mysql使用了system的默认时区，默认时区：CST，即美国中部时间。最后是通过在mysql 的配置文件my.cnf中加入了时区的配置后，问题得到解决。下面是问题的解决分析过程描述。
+
+# 应用的升级步骤描述
+
+1. 替换MySQL的驱动从 5.1.39升级到8.0.11
+
+            <dependency>
+                <groupId>mysql</groupId>
+                <artifactId>mysql-connector-java</artifactId>
+                <version>8.0.11</version>
+            </dependency>
+
+2. 安装数据库MySQL 8，迁移数据从MySQL5.7到MySQL 8
+3. 重新打包部署发布上线
+4. 通过Jenkins自动化打包部署发布上线
+
+# 问题分析和解决
+
+有两种可能的推测： 有可能是MySQL  Server导致的问题，也有可能是MySQL的Java驱动导致的。
+
+先排查是不是由于数据库升级导致的问题，5.7版本和8版本都有相同的时区配置，如下
+
+    mysql> SELECT @@global.time_zone, @@session.time_zone;
+    SELECT @@global.time_zone, @@session.time_zone;
+    +--------------------+---------------------+
+    | @@global.time_zone | @@session.time_zone |
+    +--------------------+---------------------+
+    | SYSTEM             | SYSTEM              |
+    +--------------------+---------------------+
+    
+也就是说MySQL时区是系统时区，再查看系统的时区设置情况，如下
+
+                          Local time: 一 2018-06-25 17:05:53 CST
+                      Universal time: 一 2018-06-25 09:05:53 UTC
+                            RTC time: 一 2018-06-25 09:05:53
+                           Time zone: Asia/Shanghai (CST, +0800)
+           System clock synchronized: yes
+    systemd-timesyncd.service active: yes
+                     RTC in local TZ: no
+    
+因此这个问题和MySQL Server升级暂时看来没有直接关系。
+
+再排查是否是由于MySQL驱动升级导致的问题，经过测试发现，使用 mysql-connector-java:8.0.11 驱动的应用不管连接的是MySQL Server5.7还是MySQL Server8，写入到数据库的时间都比当前时间少13个小时。
+
+再从网上查询时区相关的资料，得知比东八区少13个小时的是CST时区，从CST 中的定义知道 这是美国中部时区。 根据网上查找类似的问题，有人提出在JDBC的连接字符中，添加如下参数可以解决这个问题：
+
+    useLegacyDatetimeCode=false&serverTimezone=Asia/Shanghai
+
+根据文档：MySQL 8官网 查找到serverTimezony有如下的定义， 但是没有找到useLegacyDatetimeCode的定义。
+
+    serverTimezone
+    
+    Override detection/mapping of time zone. Used when time zone from server doesn't map to Java time zone
+    
+    Since version: 3.0.2
+      
+当这个参数加上之后，当服务端返回的时区不能和Java中的时区匹配时，使用serverTimezone设置的时区。 如果设置这个参数能解决问题， 那么就和上面推定：“是MySQL驱动出了问题，和MySQL Server没有关系”，就矛盾了， 因为这个参数是指定用serverTimezone中指定的时区，而不使用MySQL服务端的时区信息。 带着这个疑问在项目中添加如上的配置并测试，发现从Java应用写入数据库中的时间数据 都恢复成东八区的时间，貌似问题解决了，但是发布到测试环境后，很快发现java应用读取某些特定的时间时发生如下的错误：
+
+    Caused by: java.lang.IllegalArgumentException: HOUR_OF_DAY: 0 -> 1
+    
+    at java.util.GregorianCalendar.computeTime(GregorianCalendar.java:2829)
+    
+根据错误提示，这应该是小时这个字段的数值在做转换的时后出了 IllegalArgumentException的异常，在网上查找了类似的错误信息，该错误应该和 时区转换有关系，再查看了CST时区的定义，猜测是有一些CST时区的时间不能转换成UTC+8的时间而导致的问题，这一点还需要继续进行验证。
+
+到目前为止综合上述的程序验证结果来看，问题更像是在MySQL 8服务端的时区是CST导致的。 有可能是MySQL 8没有按照SYSTEM的时区转换Java程序传入的时间。
+
+查看了MySQL 8的官方文档，发现可以在my.cnf(MySQL的配置文件)中配置如下参数，于是添加该参数
+
+    default-time_zone = '+8:00'
+
+然后再重启mysql, 再查看系统的时区，显示如下
+
+    mysql> SELECT @@global.time_zone, @@session.time_zone;
+    SELECT @@global.time_zone, @@session.time_zone;
+    +--------------------+---------------------+
+    | @@global.time_zone | @@session.time_zone |
+    +--------------------+---------------------+
+    | +8:00              | +8:00               |
+    +--------------------+---------------------+
+    
+再重新部署应用进行测试，遇到的时间转换的错误不再出现。再部署到测试环境、生产环境一切正常，
+
+这个问题虽然是通过在my.cnf设定时区解决了，但是还需要继续 深入研究 MySQL 8中的时区设置为SYSTEM时，在java应用写入数据时为何没有生效？ 而相同的时区配置在MySQL Server 5.7中就不存在问题，是MySQL Server 8存在bug？ 如上的疑问等有精力再继续研究。
+
+ 
+
+---------2019-1-9更新--------
+
+MySQL中如果查询的时区信息为 system，并不是使用的操作系统的时区，而是mysql默认的CST时区，
+
+而CST时区的定义，可以表示美国中部时间，也可以表示中国时间，这个取决后面的时间表示格式。
+
+咨询了一位做DBA的朋友后，得知在mysql中最好的做法就是在my.cnf中设置时区好时区信息，避免使用system指定时区。

@@ -1,0 +1,89 @@
+---
+layout: post
+title:  "Druid的存活检测问题"
+date:   2018-12-30 11:01:11 +0900
+categories: java
+---
+
+# 概述
+
+在Druid数据库连接池中有两个参数，分别为： testWhileIdle，timeBetweenEvictionRunsMillis 根据字面意思理解是连接池会定时的对处于idle状态的连接进行一次存活检测， 目的是为了防止返回一个已经关闭的JDBC的连接给应用使用。 但是在本地验证该参数的行为的时后，发现并不是如上的期望。 如果配置了该参数，Druid会在每一次应用获取连接的时后，进行一次存活检测， 如果发现连接不可用，那么就从connection pool中重新获取一个connection返回给应用。 如下是本地的验证的一个过程。
+
+# 验证过程
+
+在本地启动Java应用，应用直连数据库，配置Druid每间隔30秒进行一次链接检测， 配置数据库的max_timeout为60秒，validationQuery为SELECT 1，如下：
+
+      maxWait: "60000"
+      # 配置间隔多久才进行一次检测，检测需要关闭的空闲连接，单位是毫秒
+      timeBetweenEvictionRunsMillis: "30000"
+      # 配置一个连接在池中最小生存的时间，单位是毫秒
+      minEvictableIdleTimeMillis: "300000"
+      validationQuery: "SELECT 1"
+      testWhileIdle: "true"
+
+预期在mysql server的日志中有"select 1"的输出， 但是项目启动后，观察mysql server的日志一直没有“select 1”日志输出。 怀疑是不是我的mysql sql的日志设置不对，于是在应用的jdbc的连接加入如下参数：
+
+traceProtocol=true
+
+该参数会在mysql驱动级别上，把应用发给mysql的所有语句都打印出来， 启动应用后，并没有定时的存活检测的指令发送到mysql server服务端。 所以这里说明Druid并没有定时的存活检测机制。
+
+经过查看Druid的github的issue列表， 发现有帖子解释testWhileIdle的作用，Druid是在获取连接时，才会做存活检测， 而并不是定时做存活检测，参考： testWhileIdle属性
+
+为了验证上述说法，检查了Druid的相关的源码， 发现如果设置了参数：testOnBorrow，那么testWhileIdle就不会生效。 testWhileIdle是在每次获取connection的时后才会检查连接的有效性。
+
+如下是Druid关于获取连接的部分源码：
+
+    if (isTestOnBorrow()) {
+                    boolean validate = testConnectionInternal(poolableConnection.getConnection());
+                    if (!validate) {
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug("skip not validate connection.");
+                        }
+    
+                        Connection realConnection = poolableConnection.getConnection();
+                        discardConnection(realConnection);
+                        continue;
+                    }
+                } else {
+                    Connection realConnection = poolableConnection.getConnection();
+                    if (realConnection.isClosed()) {
+                        discardConnection(null); // 传入null，避免重复关闭
+                        continue;
+                    }
+    
+                    if (isTestWhileIdle()) {
+                        final long currentTimeMillis = System.currentTimeMillis();
+                        final long lastActiveTimeMillis = poolableConnection.getConnectionHolder().getLastActiveTimeMillis();
+                        final long idleMillis = currentTimeMillis - lastActiveTimeMillis;
+                        long timeBetweenEvictionRunsMillis = this.getTimeBetweenEvictionRunsMillis();
+                        if (timeBetweenEvictionRunsMillis <= 0) {
+                            timeBetweenEvictionRunsMillis = DEFAULT_TIME_BETWEEN_EVICTION_RUNS_MILLIS;
+                        }
+    
+                        if (idleMillis >= timeBetweenEvictionRunsMillis) {
+                            boolean validate = testConnectionInternal(poolableConnection.getConnection());
+                            if (!validate) {
+                                if (LOG.isDebugEnabled()) {
+                                    LOG.debug("skip not validate connection.");
+                                }
+    
+                                discardConnection(realConnection);
+                                continue;
+                            }
+                        }
+                    }
+                }
+    
+查看Druid的github的wiki， 并没有的关于testWhileIdle的详细解释。
+
+# 总结
+
+我又横向对比了DBCP关于这两个参数的文档解释，如下：
+
+    Parameter 	Default 	Description
+    testWhileIdle 	false 	The indication of whether objects will be validated by the idle object evictor (if any). If an object fails to validate, it will be dropped from the pool.
+    timeBetweenEvictionRunsMillis 	-1 	The number of milliseconds to sleep between runs of the idle object evictor thread. When non-positive, no idle object evictor thread will be run. 
+    
+相比Druid解释是非常详细的，如果不横向对比技术实现原理和功能，我想DBCP的文档的成熟度是要完胜Druid。
+
+大部分程序员都认为只需要把功能实现就可以了，而不从读者，使用者的角度思考一些问题，技术这是一个硬技能，可以通过短时间的大量培训，快速的提高，但是我们却忽视表达能力、写作能力、沟通能力这些软技能的提升。

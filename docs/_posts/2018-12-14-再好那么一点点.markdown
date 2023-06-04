@@ -1,0 +1,28 @@
+---
+layout: post
+title:  "再好那么一点点"
+date:   2018-12-14 11:01:11 +0900
+categories: tcp
+---
+
+天项目发布正式环境，在生产环境执行flyway的db migration脚本的时后，出现了如下的错误
+
+    caused by java.sql.sqlexception statement violates GTID consistency create temporary table and drop temporary table can nonly be executed outside transactional conext
+
+经过分析这是由于mysql开启了GTID的特性导致db migration脚本中的如下开头语句都报错
+
+    CREATE TEMPORARY TABLE ....
+
+这个语句存在的目的是为了从一个表迁移数据到另外一个表中，然后再删除该临时表。
+
+问题是我们的开发、测试环境都没有发现这个问题，经过对比发现测试环境的Mysql配置和生产环境的配置有差异，
+
+生产环境的GTID的特性是开启的，而测试环境是关闭的，所以测试环境没有发现这个问题。
+
+后来通过回退版本先将生产环境恢复成可用状态，然后再替换创建临时表的操作为创建一个正常表，然后导完数据再删除。
+
+故障很快就分析出原因，但是回滚的过程由于运维和开发人员配合不当，又引起另外的操作失误。
+
+作坊开发形式转变成以工程化开发模式的过程中，需要付出很多的努力。
+
+在这不完美的世界上，如果每一个细节我们如果都能做的足够的好，也许可能会让结果更好一点点。

@@ -1,0 +1,48 @@
+---
+layout: post
+title:  "Redmine的搭建和备份"
+date:   2019-01-08 11:01:11 +0900
+categories: java
+---
+
+# 概述
+
+Redmine 是一个项目管理软件，对于那些付不起Jira费用的公司来讲是一个 很不错的选择。我个人用redmine来管理自己的知识体系，很多方面的知识都会记录到Redmin中。因此我这里讲解 一下如何搭建一个Redmine系统，以及如何备份和恢复。本文是基于docker-compose的方式进行安装和备份的。
+
+# 步骤
+
+## 本地安装docker-compose
+
+安装方式参考 TestLink的搭建过程和使用介绍
+
+## 下载redmine的compose文件
+
+    curl -sSL https://raw.githubusercontent.com/bitnami/bitnami-docker-redmine/master/docker-compose.yml > docker-compose.yml
+
+## 启动
+
+进入上一步中的文件目录执行如下的命令
+
+    docker-compose up -d
+
+启动后，访问地址，默认是80端口
+
+    http://ip
+
+## 备份
+
+系统运行久了，我们会有很多数据，万一丢了，就比较麻烦，所以我们要做好备份,用如下命令进行备份：
+
+    docker-compose run redmine app:backup:create
+
+该命令会在 /your/local/path/bitnami/redmine/backups目录生成一个压缩包
+
+## 恢复
+
+将上面的压缩包拷贝到另一个有redmine服务的机器上，并拷贝到备份目录：/your/local/path/bitnami/redmine/backups， 再执行如下的命令，命令执行过程中会提示你确认使用哪一个文件进行恢复，选者上一个步骤的备份的那个文件即可。
+
+ 
+
+如果想获取更多关于redmine docker 的信息，可以参考：[bitnami-redmine](https://hub.docker.com/r/bitnami/redmine/)
+
+    docker-compose run redmine app:backup:restore

@@ -1,0 +1,78 @@
+---
+layout: post
+title:  "TestLink的搭建过程和使用介绍"
+date:   2019-01-07 11:01:11 +0900
+categories: java
+---
+
+# 概述
+
+继续之前的文章如何高质量交付的一些思考 讲到要用TestLink 管理测试用例，这里记录下如何快速的搭建TestLink的一个过程，以及对TestLink的一点使用方面的个人总结
+
+# 安装步骤：
+
+## 安装docker-compose
+
+我是用用docker-compose 来安装，因为不想配置一堆的环境参数，所以我先在服务器上安装了一个docker-compose
+
+    sudo curl -L "https://github.com/docker/compose/releases/download/1.23.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+
+具体参考： docker-compose官方文档 这里需要注意的地方是请将 docker-compose的权限设置为 611 ,否则有可能会提示执行错误错误
+
+    chmod 611 /usr/loca/bin/docker-compose
+
+##  下载TestLink的docker-compose文件
+
+    curl -sSL https://raw.githubusercontent.com/bitnami/bitnami-docker-testlink/master/docker-compose.yml > docker-compose.yml
+
+设置TestLink的默认的用户名,在上面下载的文件中的TestLink的节点中追加如下内容，目的是设置TestLink的初始账号
+
+     ...... 
+     testlink:
+        environment:
+           ......
+           - TESTLINK_PASSWORD=verysecretadminpassword
+           - TESTLINK_EMAIL=admin@example.com
+     ......
+
+## 启动
+
+在下载的目录中执行如下命令:
+
+    compose up -d
+
+然后运行如下命令，确认TestLink的docker进程是否已经存在:
+
+    docker ps
+
+或者
+
+    docker-compose ps
+
+TestLink可以用443或者80端口访问，所以直接访问如下地址就可以：
+
+    http://ip
+
+或者
+
+    https://ip
+
+# TestLink的使用总结
+
+TestLink的有如下概念：
+
+    1. 需要先建立测试项目
+    2. 然后基于测试项目建立测试计划
+    3. 测试计划需要和测试需求绑定，因此需要再建立测试需求，测试需求可以是外部的一个链接，也可以在TestLink中利用CKEditor创建
+    4. 然后需要基于测试计划创建测试版本，测试版本映射当前的测试的是哪一个二进制包
+    5. 如上都创建完成之后，我们才可以创建测试用例
+    6. 测试用例中有测试前提、测试步骤，测试说明 这些都可以很好的组织我们测试过程中的所有问题，避免用excel这种文档维护测试用例的不规范性
+    7. 每一次测试完成后，都可以用TestLink 生成一份测试报告
+    8. 不好的地方：界面设计不太友好，我找创建、编辑这些按钮时，花费了很长时间，后来通过观看TestLink的使用视频才知道，需要点击页面右侧上方的一个像小齿轮的按钮之后才会出现一堆按钮
+
+如上就是TestLink的使用相关介绍。
+
+ 
+# 总结
+
+TestLink可以帮我们管理测试用例，也可以帮我们快速熟悉了解项目中的一个个功能，从需求设计阶段或者从需求分析阶段就开始考虑如何进行测试，会帮助我们从易用性角度、系统设计角度去思考，思考的角度多了，自然我们的输出的质量就会有所提高。

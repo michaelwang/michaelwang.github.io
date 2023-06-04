@@ -1,0 +1,35 @@
+---
+layout: post
+title:  "红黑树学习笔记-删除节点"
+date:   2019-02-23 11:01:11 +0900
+categories: java
+---
+
+# 概述
+
+根据前一篇文章中介绍的红黑树性质，现在我们需要考虑如何删除一个节点以及删除一个节点后，是否还能够满足它的5个特性，如果不满足我们需要如何调整使之满足红黑树的特性。
+
+# 场景分析
+被删除的节点有左子树或者右子树
+
+![delete sub tree!](/assets/img/delete_sub_tree.jpg "delete sub tree")
+
+![case1 sub tree problem!](/assets/img/case1_sub_tree_problem.jpg "case1 sub tree problem")
+
+
+如果被删除的节点和它的子节点为黑色，那么会破坏性质4: 每个从根节点到叶子节点的路径上必须包含相同数量的黑色节点，下面详细介绍：
+被删除的节点的父节点为红色
+
+![case delete all black!](/assets/img/case_delete_sub_node_black.jpg "case sub tree delete all balck")
+
+被删除的父节点为黑色
+
+![case delete sub node black!](/assets/img/case_sub_tree_delete_all_black.jpg "case delete sub node black")
+
+被删除的节点的叔叔节点有一个儿子是红色
+
+![case_delete_all_black_node_1.jpg!](/assets/img/case_delete_all_black_node_1.jpg "case_delete_all_black_node_1.jpg")
+
+被删除的节点的叔叔节点的两个儿子都是红色
+
+![case_red_black_delete_node_all_uncle_children_are_red!](/assets/img/case_red_black_delete_node_all_uncle_children_are_red.png "case_red_black_delete_node_all_uncle_children_are_red")
