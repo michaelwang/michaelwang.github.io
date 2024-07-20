@@ -23,7 +23,7 @@ paramter to do some extra logic , such as we can keep the latest item in the lis
    map.merge(key, 1, (cnt, increment) -> cnt + increment)
 
    ```
-You can see the lambda is a little difficulte to understand. But if we use function reference like below code snipet, the code is more self describletive.
+You can see the lambda is a little difficulte to understand. But if we use function reference like below code snipet, the code is more descriptive.
 
     ```
     map.merge(key, 1, Integer::sum) 
@@ -36,10 +36,17 @@ You can see the lambda is a little difficulte to understand. But if we use funct
    ```
    service.execute(GoshThiClassNameIsHumongous::action)
    ```
-
 but the lambda equivalent looks like this:
 
-    ```
+    ```    
     service.execute(() -> action());
     ```
-    
+7. There are lots of function interfaces in java.util.Function, it is not possible to remember them all, but if we can learn six basic function interfaces, other function type can be derived.
+   ```
+   UnaryOperator<T>     T apply(T t)         String::toLowerCase
+   BinaryOperator<T>    T apply(T t1, T t2)  BigInteger::add
+   Predicate<T>         boolean  test(T t)   Collection::isEmpty
+   Function<T,R>        R apply(T t)         Arrays::asList
+   Supplier<T>          T get()              Instant::now
+   Consumer<T>          void accept(T t)     System.out::println
+   ```
