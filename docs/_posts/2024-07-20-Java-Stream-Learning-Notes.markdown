@@ -79,4 +79,4 @@ but the lambda equivalent looks like this:
 	       ToDoubleBiFunction
    ```	
 
-
+9. Stream operation should be less than 3 lines.
