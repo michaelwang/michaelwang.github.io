@@ -50,3 +50,33 @@ but the lambda equivalent looks like this:
    Supplier<T>          T get()              Instant::now
    Consumer<T>          void accept(T t)     System.out::println
    ```
+8. Each basic function interfaces has 3 basic type variants, such as `Int`, `Long`, `Double`, the interface `Predicate` can has `IntPredicate`, `LongPredicate`, `DoublePredicate` three variants. Each these forms stands for take int, long, double data type as paramter, and return true or false. `BiPredicate` which means it will take in two paramters and then it will return true or false. Please see below for reference.
+```
+Predicate   IntPredicate
+            LongPredicate
+	    DoublePredicate
+	    BiPredicate
+
+Supplier    IntSupplier
+            LongSupplier
+	    DoubleSupplier
+	    BooleanSupplier
+
+Consumer    IntConsumer
+	    LongConsumer
+	    DoubleConsumer
+	    BiConsumer
+	    ObjDoubleConsumer  // which means take in object and Double as parameters 
+	    ObjLongConsumer   //which means take in object and Long as parameters 
+	    ObjIntConsumer    //which means take in object and Int as parameters
+
+Function    ToIntFunction
+  	    ToLongFunction
+	    ToDoubleFunction
+	    BiFunction
+	    ToIntBiFunction
+	    ToLongBiFunction
+	    ToDoubleBiFunction
+```
+
+
