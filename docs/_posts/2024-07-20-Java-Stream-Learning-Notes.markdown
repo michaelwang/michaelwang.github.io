@@ -8,7 +8,7 @@ categories: java
 # Summary
 
 1. In lambda we should not dependent on  the outside virable to finish some logic,(but why?)
-When using lambda expression, we need dependent on the upper layer output, evey lambda expression should keep as stateless as possible. 
+When using lambda expression, we need dependent on the upper layer output, evey lambda expression should keep as stateless as possible. Stream operation should be less than 3 lines.
 
 2. There is java.util.Function package, all the interfaces in the package only has a method, these interfaces are designed for lambda.
 
@@ -55,28 +55,40 @@ but the lambda equivalent looks like this:
    Predicate   IntPredicate
    	       LongPredicate
    	       DoublePredicate
-	       BiPredicate
 
    Supplier    IntSupplier
    	       LongSupplier
 	       DoubleSupplier
-	       BooleanSupplier
 
    Consumer    IntConsumer
   	       LongConsumer
 	       DoubleConsumer
-	       BiConsumer
-	       ObjDoubleConsumer  // which means take in object and Double as parameters 
-	       ObjLongConsumer   //which means take in object and Long as parameters 
-	       ObjIntConsumer    //which means take in object and Int as parameters
 
    Function    ToIntFunction
 	       ToLongFunction
 	       ToDoubleFunction
-	       BiFunction
-	       ToIntBiFunction
-	       ToLongBiFunction
-	       ToDoubleBiFunction
+
    ```	
 
-9. Stream operation should be less than 3 lines.
+9. The basic function can also be prefixed with `Bi`, which means it will recive two parameters
+
+   ```
+   Predicate  BiPredicate  // the predicate function will recevie two parameters then return boolean value 
+
+   Function   BiFunction  
+
+   Consumer   BiConsumer
+
+   ```
+
+10. The form <Src>To[Obj]Function
+
+11. The three basic type keywords `Int`, `Long`, `Double` can combined with `Bi` , such as below
+
+    ```
+    Function   ToIntBiFunction      // this function will receive two parameters but return Int basic type. 
+ 	       ToLongBiFunction     // this function will receive two parameters but return Long basic type. 
+	       ToDoubleBiFunction   // this function will receive two parameters but return Double basic type. 
+
+
+   ```
