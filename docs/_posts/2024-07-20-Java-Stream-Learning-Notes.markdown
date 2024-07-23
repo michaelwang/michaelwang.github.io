@@ -81,7 +81,7 @@ but the lambda equivalent looks like this:
 
    ```
 
-10. The form <Src>To[Obj]Function
+10. The form <Src>To[Obj] can be used in `Function` basic function interface.
 
 11. The three basic type keywords `Int`, `Long`, `Double` can combined with `Bi` , such as below
 
@@ -92,3 +92,6 @@ but the lambda equivalent looks like this:
 
 
    ```
+12. If the list is small, and we want persuite the perfermence, then we can return `Set`, `List`, `Collection`, but if we can not implement some methods in `Collection` we can only return `Iterater`. 
+
+13. The `Stream` was introduced since Java 8, so we can use `Stream` or `Iterable` for returning list. So when we designe API to return list, we need provide both data type for list. But we need to write methods to convert `Stream` between `Iterable`. There is `Iterable` method in `Stream` class, so we can write method to convert `Stream` to `Iterable` or convert `Iterable` to `Stream`. 
