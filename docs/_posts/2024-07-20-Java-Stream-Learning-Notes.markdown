@@ -94,4 +94,6 @@ but the lambda equivalent looks like this:
    ```
 12. If the list is small, and we want persuite the perfermence, then we can return `Set`, `List`, `Collection`, but if we can not implement some methods in `Collection` we can only return `Iterater`. 
 
-13. The `Stream` was introduced since Java 8, so we can use `Stream` or `Iterable` for returning list. So when we designe API to return list, we need provide both data type for list. But we need to write methods to convert `Stream` between `Iterable`. There is `Iterable` method in `Stream` class, so we can write method to convert `Stream` to `Iterable` or convert `Iterable` to `Stream`. 
+13. The `Stream` was introduced since Java 8, so we can use `Stream` or `Iterable` for returning list. So when we designe API to return list, we need provide both data type for list. But we need to write methods to convert `Stream` between `Iterable`. There is `Iterable` method in `Stream` class, so we can write method to convert `Stream` to `Iterable` or convert `Iterable` to `Stream`.
+
+14. The rule when we use .paralle, first the source should be splitable, such as ArrayList, HashMap, IO-based sources like Bloking Queue or LinkedList are not suitable for paralle. Also the size of collection should at least greater then 10000. for more detail how to caculate the size please see the link (StreamParallelGuidance)[https://gee.cs.oswego.edu/dl/html/StreamParallelGuidance.html]
